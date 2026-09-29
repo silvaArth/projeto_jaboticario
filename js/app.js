@@ -232,18 +232,8 @@ function encontrarPosicaoPorCodigoOuTexto(input) {
 }
 
 function preencherSelectEnderecosCaixa() {
-  const dl = document.getElementById('listaEnderecosLivres');
-  if (!dl) return;
-  const used = new Set(stored().map(b => b.address));
-  const posList = (typeof POS !== 'undefined') ? POS : [];
-  const free = posList.filter(p => p.rua !== 'PALETE' && ['B', 'C', 'D', 'E'].includes(p.col) && !used.has(p.id));
-
-  let html = '';
-  free.forEach(p => {
-    const label = `${p.id} — ${p.rua} Rack ${String(p.rack).padStart(2,'0')} L${String(p.nivel || p.linha).padStart(2,'0')} Col ${p.col}`;
-    html += `<option value="${p.id}">${label}</option>`;
-  });
-  dl.innerHTML = html;
+  // Desativado a pedido: entrada de endereço por digitação/bipagem ou automático somente, sem sugestões de todos os endereços
+  return;
 }
 
 function fecharModal(){
@@ -298,8 +288,7 @@ function perguntarAgrupamentoOuOutroLugar(code, prodName, qtd, operador, vagasAg
 
       <div id="modalSeletorContainer" style="display:none;margin-top:12px;flex-direction:column;gap:10px">
         <label style="font-size:12px;font-weight:bold;color:#1e293b">Digite ou bip o código de barras do endereço:</label>
-        <input id="modalInputPosicao" list="modalListaEnderecos" placeholder="Ex.: RUA5-6B ou RUA5-R01-L06-B" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
-        <datalist id="modalListaEnderecos"></datalist>
+        <input id="modalInputPosicao" placeholder="Ex.: RUA5-6B ou RUA5-R01-L06-B" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px" autocomplete="off">
         <div id="modalPosicaoError" style="color:#ef4444;font-size:12px;display:none"></div>
         <div style="display:flex;gap:8px;margin-top:6px">
           <button class="gray" onclick="voltarBtnsModal()">Voltar</button>
@@ -322,21 +311,9 @@ function confirmarAgrupamentoModal(code, qtd, operador, originalBarcode){
 function abrirSeletorModal(code, qtd, operador, originalBarcode){
   const btns = document.getElementById('modalBtnsOpcoes');
   const container = document.getElementById('modalSeletorContainer');
-  const dl = document.getElementById('modalListaEnderecos');
   const inp = document.getElementById('modalInputPosicao');
   if(btns) btns.style.display = 'none';
   if(container) container.style.display = 'flex';
-
-  if(dl){
-    const used = new Set(stored().map(b => b.address));
-    const posList = (typeof POS !== 'undefined') ? POS : [];
-    const free = posList.filter(p => p.rua !== 'PALETE' && ['B', 'C', 'D', 'E'].includes(p.col) && !used.has(p.id));
-    let html = '';
-    free.forEach(p => {
-      html += `<option value="${p.id}">${p.id} — ${p.rua} Rack ${String(p.rack).padStart(2,'0')} L${String(p.nivel || p.linha).padStart(2,'0')} Col ${p.col}</option>`;
-    });
-    dl.innerHTML = html;
-  }
   if(inp) inp.focus();
 }
 
