@@ -72,8 +72,7 @@ Como a aplicação é construída com tecnologias web nativas (HTML/JS), não é
 3. Acesse `http://127.0.0.1:8080` no seu navegador.
 
 4. **Conexão com Banco de Dados**:
-   - Clique no botão **☁️ Conectar Supabase** no cabeçalho.
-   - Insira a URL e a Anon Key do seu projeto Supabase (ou configure no `.env` ao publicar na Vercel).
+   - A conexão é 100% automática através das variáveis de ambiente (`SUPABASE_URL` e `SUPABASE_ANON_KEY`) configuradas na Vercel ou via arquivo de ambiente. O usuário final não precisa informar nenhuma credencial na interface.
 
 ---
 

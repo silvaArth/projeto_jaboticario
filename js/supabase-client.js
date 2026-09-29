@@ -31,11 +31,12 @@ function atualizarIndicadorSupabase(conectado) {
     const badge = document.getElementById('statusSupabaseBadge');
     if (badge) {
         if (conectado) {
+            badge.style.display = 'inline-flex';
             badge.style.background = '#10b981';
-            badge.innerHTML = '☁️ Supabase Online';
+            badge.style.color = '#ffffff';
+            badge.innerHTML = '🟢 Sistema Online';
         } else {
-            badge.style.background = '#ef4444';
-            badge.innerHTML = '☁️ Supabase Desconectado';
+            badge.style.display = 'none';
         }
     }
 }
