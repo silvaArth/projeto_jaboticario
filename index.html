@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pulmão de Caixas — Boticário V4</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header><div><b style="font-size:20px">Pulmão de Caixas — Boticário — Base 25/09/2026</b><div style="font-size:12px;color:#cbd5e1">Capacidade operacional: <span id="capHeader">2.646</span> caixas</div></div><div style="display:flex;align-items:center;gap:12px"><button id="btnSupabaseHeader" onclick="abrirConfigSupabase()" style="background:#0284c7;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">☁️ Conectar Supabase</button><span id="clock"></span></div></header>
+<nav><button onclick="go('painel')">Painel</button><button onclick="go('caixa')">Adicionar Caixa</button><button onclick="go('entrada')">Receber NF</button><button onclick="go('pulmao')">Mapa do Pulmão</button><button onclick="go('sobras')">Sobras NF</button><button onclick="go('mov')">Movimentações</button></nav>
+<main>
+<section id="painel" class="active"><h2>Painel</h2><div class="cards">
+<div class="card">Capacidade<div class="big" id="capCard">2.646</div></div><div class="card">Ocupadas<div class="big" id="ocup">0</div></div><div class="card">Vagas<div class="big" id="livre">0</div></div><div class="card">Utilização<div class="big" id="perc">0%</div></div></div>
+<div class="card" style="margin-top:14px"><div class="sectionTitle"><div><h3 style="margin:0">Inventário do Pulmão</h3><div class="small">Exporte o inventário ou importe uma planilha Excel com os códigos e endereços físicos.</div></div><div><button onclick="exportarInventarioPulmao()">Exportar para Excel</button><button class="red" onclick="limparTodosOsDados()" style="margin-left:8px">Zerar Alocações</button></div></div><hr style="border:0;border-top:1px solid var(--line);margin:14px 0"><div class="toolbar"><input id="planilhaPulmao" type="file" accept=".xlsx,.xls,.csv" style="flex:1;min-width:260px"><button onclick="importarPlanilhaPulmao()">Importar planilha e atualizar pulmão</button></div><div class="small">A planilha deve ter colunas de <b>código</b> e <b>endereço</b>. Linhas sem código, vazias ou com código 00000 serão ignoradas. A importação substitui somente as alocações vindas da planilha, preservando as entradas manuais e por NF.</div><div id="resultadoImportacaoPulmao" class="notice" style="display:none;margin-top:10px"></div></div>
+</section>
+
+<section id="entrada"><h2>Recebimento por Nota Fiscal</h2><div id="bloqueio" class="alert"></div><div class="notice">A NF é convertida em caixas fechadas pela quantidade por caixa da planilha. Novas caixas são alocadas somente nas posições B, C, D e E cadastradas para o produto. A sobra de unidades fica no relatório de sobras.</div>
+<div class="card">
+<div class="toolbar"><input id="nf" placeholder="Número da NF"><input id="serie" placeholder="Série"><input id="forn" placeholder="Fornecedor"><input id="qtd" type="number" min="1" value="1" placeholder="Caixas"><input id="op" placeholder="Operador"></div>
+<div class="toolbar"><input id="codigos" style="flex:1;min-width:280px" placeholder="Códigos dos produtos (ex.: 48060, 48058)"><button class="gray" onclick="document.getElementById('nfxml').click()">Importar NF-e XML</button><input id="nfxml" type="file" accept=".xml,text/xml" style="display:none" onchange="importarXML(this)"></div>
+<div id="prodPreview" class="notice" style="display:none"></div>
+<div id="sobraPreview" class="notice" style="display:none"></div>
+<button onclick="entrada()">Registrar NF e armazenar caixas fechadas</button>
+</div>
+<div class="card"><h3>Últimas caixas</h3><div id="ult"></div></div></section>
+
+<section id="caixa"><div class="card">
+<h2>Adicionar Caixa</h2>
+<p class="small">Informe o <b>código do produto</b> e a quantidade. Você pode deixar o endereço no automático (com agrupamento inteligente) ou escolher a posição desejada.</p>
+<div class="toolbar" style="flex-wrap:wrap;gap:10px">
+<input id="codigoProdutoCaixa" inputmode="numeric" placeholder="Código do produto (ex.: 01314)" style="flex:1;min-width:200px">
+<input id="qtdCaixasCaixa" type="number" min="1" value="1" placeholder="Qtd. caixas" style="width:110px">
+<input id="enderecoCaixaInput" list="listaEnderecosLivres" placeholder="Endereço / Cód. Barras (ex.: RUA5-6B ou em branco para Automático)" style="flex:1;min-width:260px" autocomplete="off">
+<datalist id="listaEnderecosLivres"></datalist>
+<input id="operadorCaixa" placeholder="Operador (ex.: Michael)" style="flex:1;min-width:180px">
+</div>
+<div class="toolbar" style="margin-top:10px">
+<button onclick="adicionarCaixasPorProduto()">Adicionar caixas</button>
+</div>
+<div id="produtoCaixaInfo" class="notice" style="display:none;margin-top:10px"></div>
+</div>
+<div class="card"><h3>Últimas caixas adicionadas</h3><div id="ultCaixa"></div></div>
+</section>
+<section id="pulmao"><h2>Mapa do Pulmão</h2>
+<div class="card occupacaoMapa"><div><div class="small">OCUPAÇÃO DO PULMÃO</div><div class="ocupGauge" id="percMapa">0%</div></div><div><b id="resumoMapa">0 de 2.646 caixas</b><div class="small" id="vagasMapa">2.646 vagas livres</div></div><div class="legendaMapa"><span class="legendaItem"><i class="legendaCor legendaLivre"></i> Livre</span><span class="legendaItem"><i class="legendaCor legendaOcupada"></i> Ocupado</span></div></div>
+<div class="card" style="border:2px solid #f59e0b"><h3>Retirar caixa do Pulmão</h3><p class="small">Digite o <b>código do produto</b> da caixa. O sistema localizará o endereço antes da retirada.</p><div class="toolbar"><input id="codigoRetiradaMapa" inputmode="numeric" placeholder="Código da caixa/produto (ex.: 90812)" style="flex:1;min-width:240px"><input id="operadorRetiradaMapa" placeholder="Operador" style="flex:1;min-width:180px"><button class="red" onclick="retirarPorCodigoNoMapa()">Localizar e retirar</button></div><div id="retiradaMapaInfo" class="notice" style="display:none"></div></div><div class="card"><b>Identificação por produto</b><div class="toolbar"><input id="produtoBusca" oninput="buscarProduto()" placeholder="Digite código ou nome do produto" style="flex:1"><button class="gray" onclick="limparProduto()">Limpar</button></div><div id="produtoResultado"></div></div><div class="toolbar"><select id="rua" onchange="map()"><option>TODAS</option><option>RUA 5</option><option>RUA 6</option><option>RUA 7</option></select><input id="busca" oninput="map()" placeholder="Buscar NF, caixa ou endereço"></div><div id="mapa"></div></section>
+
+<section id="sobras"><h2>Relatório de Sobras da NF</h2><div class="card"><p class="small">Mostra somente a quantidade que não formou caixa fechada, calculada pela quantidade por caixa cadastrada na planilha.</p><div class="toolbar"><button onclick="exportarSobrasCSV()">Exportar sobras CSV</button><button class="gray" onclick="limparSobras()">Limpar relatório</button></div><div id="tabelaSobras"></div></div></section>
+<section id="mov"><h2>Movimentações</h2><div class="card"><div class="toolbar"><input id="ms" oninput="mov()" placeholder="Pesquisar"><button class="gray" onclick="csv()">Exportar CSV</button></div><div id="mt"></div></div></section>
+</main><div class="modal" id="modal"><div class="box" id="mb"></div></div>
+  <!-- Libs Externas -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Módulos de Dados e Lógica do Sistema -->
+  <script src="js/positions.js"></script>
+  <script src="js/products.js"></script>
+  <script src="/api/env.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
