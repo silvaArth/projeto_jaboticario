@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+js/env.local.js
 
 # Sensitive credentials & keys
 *.pem

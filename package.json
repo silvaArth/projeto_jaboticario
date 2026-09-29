@@ -1,0 +1,24 @@
+{
+  "name": "projeto-pulmao-boticario",
+  "version": "1.0.0",
+  "description": "Sistema de Gestão e Mapeamento Operacional do Pulmão de Caixas Boticário",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "logistica",
+    "estoque",
+    "wms",
+    "pulmao-caixas",
+    "boticario",
+    "supabase",
+    "realtime"
+  ],
+  "author": "arthurSilva",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
