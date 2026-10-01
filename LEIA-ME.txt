@@ -1,0 +1,2 @@
+Pulmão Boticário V4.8
+Correção: adicionada opção “Voltar / Cancelar” na janela de retirada de caixa do mapa do pulmão.

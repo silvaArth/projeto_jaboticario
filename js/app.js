@@ -23,32 +23,122 @@ function inicializarBasePlanilha(){
 }
 
 
+function canonicalAddressKey(input) {
+  if (!input) return '';
+  const str = String(input).trim().toUpperCase();
+  // 1. Padrão completo com Coluna (A-E): RUA 01 - RACK 01 - LINHA 01 - A (opcional sub: - 1)
+  const m1 = str.match(/^(?:RUA|R)?\s*0*(\d+)\s*[-_/\s]+\s*(?:R|RACK|RCK)?\s*0*(\d+)\s*[-_/\s]+\s*(?:L|LINHA|N|NIVEL|P|POS|POSICAO|ANDAR)?\s*0*(\d+)\s*[-_/\s]+\s*([A-E])(?:\s*[-_/\s]+\s*0*(\d+))?$/i);
+  if (m1) {
+    const ruaNum = parseInt(m1[1], 10);
+    const rack = parseInt(m1[2], 10);
+    const linha = parseInt(m1[3], 10);
+    const col = m1[4].toUpperCase();
+    const sub = m1[5] ? '-' + String(parseInt(m1[5], 10)).padStart(2, '0') : '';
+    return 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-' + col + sub;
+  }
+  // 2. 4 números: 01-01-01-01 (Rua, Rack, Linha, Vaga 1..5)
+  const m4 = str.match(/^(?:RUA|R)?\s*0*(\d+)\s*[-_/\s]+\s*(?:R|RACK|RCK)?\s*0*(\d+)\s*[-_/\s]+\s*(?:L|LINHA|N|NIVEL|P|POS|POSICAO|ANDAR)?\s*0*(\d+)\s*[-_/\s]+\s*(?:P|POS|VAGA|COL)?\s*0*(\d+)$/i);
+  if (m4) {
+    const ruaNum = parseInt(m4[1], 10);
+    const rack = parseInt(m4[2], 10);
+    const linha = parseInt(m4[3], 10);
+    const pNum = parseInt(m4[4], 10);
+    const col = (ruaNum === 5 || ruaNum === 7) ? (['B','C','D','E','A'][pNum - 1] || 'B') : (['A','B','C','D','E'][pNum - 1] || 'A');
+    return 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-' + col;
+  }
+  // 3. 3 números: 01-01-01 (Rua, Rack, Linha)
+  const m3 = str.match(/^(?:RUA|R)?\s*0*(\d+)\s*[-_/\s]+\s*(?:R|RACK|RCK)?\s*0*(\d+)\s*[-_/\s]+\s*(?:L|LINHA|N|NIVEL|P|POS|POSICAO|ANDAR)?\s*0*(\d+)$/i);
+  if (m3) {
+    const ruaNum = parseInt(m3[1], 10);
+    const rack = parseInt(m3[2], 10);
+    const linha = parseInt(m3[3], 10);
+    return 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-B';
+  }
+  // 4. Padrão curto: RUA 5 - 6B (Rua 5, Rack 6, Coluna B)
+  const mCurto = str.match(/^(?:RUA|R)?\s*0*(\d+)\s*[-_/\s]*(?:R|RACK)?\s*0*(\d+)\s*[-_/\s]*([A-E])$/i);
+  if (mCurto) {
+    const ruaNum = parseInt(mCurto[1], 10);
+    const rack = parseInt(mCurto[2], 10);
+    const col = mCurto[3].toUpperCase();
+    return 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L01-' + col;
+  }
+  return str.replace(/[^A-Z0-9]/g, '');
+}
+window.canonicalAddressKey = canonicalAddressKey;
+
+function salvarPosicaoCustomizada(p) {
+  try {
+    const custom = JSON.parse(localStorage.getItem('p5_1_custom_positions') || '[]');
+    if (!custom.some(x => x.id === p.id)) {
+      custom.push(p);
+      localStorage.setItem('p5_1_custom_positions', JSON.stringify(custom));
+    }
+  } catch(e) {}
+}
+
+function restaurarPosicoesCustomizadas() {
+  if (typeof POS === 'undefined') return;
+  try {
+    const custom = JSON.parse(localStorage.getItem('p5_1_custom_positions') || '[]');
+    const ids = new Set(POS.map(p => p.id));
+    custom.forEach(p => {
+      if (p && p.id && !ids.has(p.id)) {
+        POS.push(p);
+        ids.add(p.id);
+      }
+    });
+  } catch(e) {}
+}
+
+function garantirPosicoesParaEnderecos() {
+  if (typeof POS === 'undefined') return;
+  restaurarPosicoesCustomizadas();
+  const ids = new Set(POS.map(p => canonicalAddressKey(p.id)));
+
+  // Posições de caixas armazenadas
+  (boxes || []).forEach(b => {
+    if (b && b.address) {
+      const k = canonicalAddressKey(b.address);
+      if (k && !ids.has(k)) {
+        const pos = encontrarPosicaoPorCodigoOuTexto(b.address);
+        if (pos) ids.add(canonicalAddressKey(pos.id));
+      }
+    }
+  });
+
+  // Posições do mapa mestre
+  if (window.MAPA_ENDERECOS_PRODUTOS) {
+    Object.values(window.MAPA_ENDERECOS_PRODUTOS).forEach(addr => {
+      if (addr) {
+        const k = canonicalAddressKey(addr);
+        if (k && !ids.has(k)) {
+          const pos = encontrarPosicaoPorCodigoOuTexto(addr);
+          if (pos) ids.add(canonicalAddressKey(pos.id));
+        }
+      }
+    });
+  }
+}
+window.garantirPosicoesParaEnderecos = garantirPosicoesParaEnderecos;
+
 function extrairCodigoProduto(input) {
   const codigo_barras = String(input ?? '').trim();
   if (!codigo_barras) {
-    return { codigo_barras: '', codigo_produto: '', valido: false, erro: 'Por favor, informe ou bipe o código de barras.' };
+    return { codigo_barras: '', codigo_produto: '', valido: false, erro: 'Por favor, informe ou bipe o código de barras ou código do produto.' };
   }
   
   const digits = codigo_barras.replace(/\D/g, '');
 
   if (digits.length >= 6) {
     // Código de barras completo (ex: EAN-13 / DUN-14)
-    // Ignora o último dígito, considera os 5 dígitos consecutivos anteriores (penúltimo até 5 posições antes)
+    // Ignora o último dígito, considera os 5 dígitos consecutivos anteriores
     const codigo_produto = digits.slice(-6, -1);
     return { codigo_barras, codigo_produto, valido: true, erro: null };
-  } else if (digits.length === 5) {
-    // Código de produto direto de 5 dígitos (ex.: "01314" ou "48060")
-    return { codigo_barras, codigo_produto: digits, valido: true, erro: null };
-  } else if (digits.length > 0 && digits.length < 5) {
-    // Menos caracteres do que o necessário para validação
-    return {
-      codigo_barras,
-      codigo_produto: '',
-      valido: false,
-      erro: `Código "${codigo_barras}" inválido: possui apenas ${digits.length} dígito(s). É necessário no mínimo 5 dígitos (ou 6+ para código de barras completo).`
-    };
+  } else if (digits.length >= 1 && digits.length <= 5) {
+    // Código de produto direto (ex: "1314" -> "01314" ou "48060")
+    return { codigo_barras, codigo_produto: digits.padStart(5, '0'), valido: true, erro: null };
   } else {
-    // Alfanumérico curto sem dígitos suficientes
+    // Alfanumérico direto
     return {
       codigo_barras,
       codigo_produto: codigo_barras.toUpperCase(),
@@ -188,47 +278,161 @@ function ultCaixa(){
  el.innerHTML=a.length?'<table><tr><th>Caixa</th><th>Código</th><th>Produto</th><th>Endereço</th></tr>'+a.map(b=>`<tr><td>${b.box}</td><td>${(b.productCodes||[]).join(', ')||'-'}</td><td>${(b.products||[]).map(x=>x.name).join('<br>')||'-'}</td><td>${b.address}</td></tr>`).join('')+'</table>':'Nenhuma caixa adicionada.';
 }
 
-function encontrarPosicaoPorCodigoOuTexto(input) {
+function encontrarOuCriarPosicaoParaItem(input, usedAddresses) {
   if (!input || typeof input !== 'string') return null;
   const str = input.trim().toUpperCase();
   if (!str) return null;
 
   const posList = (typeof POS !== 'undefined') ? POS : [];
-  if (!posList.length) return null;
+  const used = usedAddresses || new Set();
+  const isOcupado = (id) => used.has(canonicalAddressKey(id)) || used.has(normAddr(id));
 
-  let p = posList.find(x => x.id.toUpperCase() === str);
-  if (p) return p;
-
-  const cleanStr = str.replace(/[^A-Z0-9]/g, '');
-  p = posList.find(x => x.id.replace(/[^A-Z0-9]/g, '') === cleanStr);
-  if (p) return p;
-
-  const m = str.match(/^RUA\s*(\d+)[-_\s]*(?:R?(\d+)[-_\s]*)?(?:L?(\d+))?[-_\s]*([A-E])$/i);
-  if (m) {
-    const ruaNum = parseInt(m[1], 10);
-    const num2 = m[2] ? parseInt(m[2], 10) : null;
-    const num3 = m[3] ? parseInt(m[3], 10) : null;
-    const col = m[4].toUpperCase();
+  // 1. Padrão completo com Coluna (A-E): RUA 01 - RACK 01 - LINHA 01 - A (opcional sub)
+  const m1 = str.match(/^(?:RUA|R)?\s*0*(\d+)\s*[-_/\s]+\s*(?:R|RACK|RCK)?\s*0*(\d+)\s*[-_/\s]+\s*(?:L|LINHA|N|NIVEL|P|POS|POSICAO|ANDAR)?\s*0*(\d+)\s*[-_/\s]+\s*([A-E])(?:\s*[-_/\s]+\s*0*(\d+))?$/i);
+  if (m1) {
+    const ruaNum = parseInt(m1[1], 10);
+    const rack = parseInt(m1[2], 10);
+    const linha = parseInt(m1[3], 10);
+    const col = m1[4].toUpperCase();
+    const sub = m1[5] ? parseInt(m1[5], 10) : null;
     const ruaStr = 'RUA ' + ruaNum;
+    const subStr = sub ? '-' + String(sub).padStart(2, '0') : '';
+    const idPadrao = 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-' + col + subStr;
 
-    const used = new Set((typeof stored === 'function' ? stored() : []).map(b => b.address));
-
-    if (num2 !== null && num3 !== null) {
-      const rack = num2;
-      const linha = num3;
-      p = posList.find(x => x.rua === ruaStr && x.rack === rack && x.linha === linha && x.col === col);
-      if (p) return p;
-    } else if (num2 !== null) {
-      // 1º número após RUA = RACK (ex.: RUA5-6B => Rua 5, Rack 6, Coluna B)
-      const rack = num2;
-      const candidates = posList.filter(x => x.rua === ruaStr && x.rack === rack && x.col === col);
-      if (candidates.length > 0) {
-        const freeCandidate = candidates.find(c => !used.has(c.id));
-        return freeCandidate || candidates[0];
+    let p = posList.find(x => x.id === idPadrao || canonicalAddressKey(x.id) === canonicalAddressKey(idPadrao));
+    if (p && !isOcupado(p.id)) {
+      return p;
+    }
+    if (!p) {
+      const novoP = { id: idPadrao, rua: ruaStr, rack, linha, col, material: '', area: '3', obrigatoria: 0 };
+      posList.push(novoP);
+      salvarPosicaoCustomizada(novoP);
+      return novoP;
+    }
+    // Se a posição exata já estiver ocupada no lote atual, procura coluna livre no mesmo rack e linha
+    const cols = (ruaNum === 5 || ruaNum === 7) ? ['B', 'C', 'D', 'E'] : ['A', 'B', 'C', 'D', 'E'];
+    for (const altCol of cols) {
+      const altId = 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-' + altCol;
+      let altP = posList.find(x => x.id === altId);
+      if (!altP) {
+        altP = { id: altId, rua: ruaStr, rack, linha, col: altCol, material: '', area: '3', obrigatoria: 0 };
+        posList.push(altP);
+        salvarPosicaoCustomizada(altP);
+      }
+      if (!isOcupado(altP.id)) {
+        return altP;
       }
     }
+    // Se todas as colunas já estiverem ocupadas, cria sub-posição para não mesclar
+    let subIdx = 2;
+    while (isOcupado(idPadrao + '-' + String(subIdx).padStart(2, '0'))) {
+      subIdx++;
+    }
+    const novoSubId = idPadrao + '-' + String(subIdx).padStart(2, '0');
+    const novoSubP = { id: novoSubId, rua: ruaStr, rack, linha, col, material: '', area: '3', obrigatoria: 0 };
+    posList.push(novoSubP);
+    salvarPosicaoCustomizada(novoSubP);
+    return novoSubP;
   }
-  return null;
+
+  // 2. 4 números: 01-01-01-01 (Rua, Rack, Linha, Vaga 1..5)
+  const m4 = str.match(/^(?:RUA|R)?\s*0*(\d+)\s*[-_/\s]+\s*(?:R|RACK|RCK)?\s*0*(\d+)\s*[-_/\s]+\s*(?:L|LINHA|N|NIVEL|P|POS|POSICAO|ANDAR)?\s*0*(\d+)\s*[-_/\s]+\s*(?:P|POS|VAGA|COL)?\s*0*(\d+)$/i);
+  if (m4) {
+    const ruaNum = parseInt(m4[1], 10);
+    const rack = parseInt(m4[2], 10);
+    const linha = parseInt(m4[3], 10);
+    const pNum = parseInt(m4[4], 10);
+    const ruaStr = 'RUA ' + ruaNum;
+    const col = (ruaNum === 5 || ruaNum === 7) ? (['B','C','D','E','A'][pNum - 1] || 'B') : (['A','B','C','D','E'][pNum - 1] || 'A');
+    const idPadrao = 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-' + col;
+    let p = posList.find(x => x.id === idPadrao || canonicalAddressKey(x.id) === canonicalAddressKey(idPadrao));
+    if (!p) {
+      p = { id: idPadrao, rua: ruaStr, rack, linha, col, material: '', area: '3', obrigatoria: 0 };
+      posList.push(p);
+      salvarPosicaoCustomizada(p);
+    }
+    if (!isOcupado(p.id)) return p;
+    const cols = (ruaNum === 5 || ruaNum === 7) ? ['B', 'C', 'D', 'E'] : ['A', 'B', 'C', 'D', 'E'];
+    for (const altCol of cols) {
+      const altId = 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-' + altCol;
+      let altP = posList.find(x => x.id === altId);
+      if (!altP) {
+        altP = { id: altId, rua: ruaStr, rack, linha, col: altCol, material: '', area: '3', obrigatoria: 0 };
+        posList.push(altP);
+        salvarPosicaoCustomizada(altP);
+      }
+      if (!isOcupado(altP.id)) return altP;
+    }
+    return p;
+  }
+
+  // 3. 3 números: 01-01-01 (Rua, Rack, Linha)
+  const m3 = str.match(/^(?:RUA|R)?\s*0*(\d+)\s*[-_/\s]+\s*(?:R|RACK|RCK)?\s*0*(\d+)\s*[-_/\s]+\s*(?:L|LINHA|N|NIVEL|P|POS|POSICAO|ANDAR)?\s*0*(\d+)$/i);
+  if (m3) {
+    const ruaNum = parseInt(m3[1], 10);
+    const rack = parseInt(m3[2], 10);
+    const linha = parseInt(m3[3], 10);
+    const ruaStr = 'RUA ' + ruaNum;
+    const cols = (ruaNum === 5 || ruaNum === 7) ? ['B', 'C', 'D', 'E'] : ['A', 'B', 'C', 'D', 'E'];
+    for (const c of cols) {
+      const id = 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-' + c;
+      let p = posList.find(x => x.id === id);
+      if (!p) {
+        p = { id, rua: ruaStr, rack, linha, col: c, material: '', area: '3', obrigatoria: 0 };
+        posList.push(p);
+        salvarPosicaoCustomizada(p);
+      }
+      if (!isOcupado(p.id)) return p;
+    }
+    const fallbackId = 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(linha).padStart(2, '0') + '-B';
+    let p = posList.find(x => x.id === fallbackId);
+    return p || { id: fallbackId, rua: ruaStr, rack, linha, col: 'B', material: '', area: '3', obrigatoria: 0 };
+  }
+
+  // 4. Formato curto com coluna: RUA 5-6B
+  const mCurto = str.match(/^(?:RUA|R)?\s*0*(\d+)\s*[-_/\s]*(?:R|RACK)?\s*0*(\d+)\s*[-_/\s]*([A-E])$/i);
+  if (mCurto) {
+    const ruaNum = parseInt(mCurto[1], 10);
+    const rack = parseInt(mCurto[2], 10);
+    const col = mCurto[3].toUpperCase();
+    const ruaStr = 'RUA ' + ruaNum;
+    const candidates = posList.filter(x => x.rua === ruaStr && x.rack === rack && x.col === col);
+    if (candidates.length > 0) {
+      const free = candidates.find(c => !isOcupado(c.id));
+      if (free) return free;
+    }
+    const maxLinha = Math.max(1, ...candidates.map(x => Number(x.linha) || 1));
+    const nextL = maxLinha + 1;
+    const id = 'RUA' + ruaNum + '-R' + String(rack).padStart(2, '0') + '-L' + String(nextL).padStart(2, '0') + '-' + col;
+    const novoP = { id, rua: ruaStr, rack, linha: nextL, col, material: '', area: '3', obrigatoria: 0 };
+    posList.push(novoP);
+    salvarPosicaoCustomizada(novoP);
+    return novoP;
+  }
+
+  // 5. Match direto por ID exato ou chave canônica
+  let p = posList.find(x => x.id.toUpperCase() === str || canonicalAddressKey(x.id) === canonicalAddressKey(str));
+  if (p && !isOcupado(p.id)) return p;
+
+  // 6. Match sem pontuação
+  const cleanStr = str.replace(/[^A-Z0-9]/g, '');
+  p = posList.find(x => x.id.replace(/[^A-Z0-9]/g, '') === cleanStr);
+  if (p && !isOcupado(p.id)) return p;
+
+  // 7. Novo endereço personalizado garantido no mapa
+  const idCustom = str.replace(/[\s/]+/g, '-');
+  let pCustom = posList.find(x => x.id === idCustom);
+  if (!pCustom) {
+    pCustom = { id: idCustom, rua: 'OUTROS', rack: 1, linha: 1, col: 'B', material: '', area: '3', obrigatoria: 0 };
+    posList.push(pCustom);
+    salvarPosicaoCustomizada(pCustom);
+  }
+  return pCustom;
+}
+window.encontrarOuCriarPosicaoParaItem = encontrarOuCriarPosicaoParaItem;
+
+function encontrarPosicaoPorCodigoOuTexto(input) {
+  return encontrarOuCriarPosicaoParaItem(input);
 }
 
 function preencherSelectEnderecosCaixa() {
@@ -389,11 +593,61 @@ function executarAlocacaoCaixas(code, qtd, operador, vagasDefinidas, originalBar
   const codeInp = document.getElementById('codigoProdutoCaixa');
   const qtdInp = document.getElementById('qtdCaixasCaixa');
   const endInp = document.getElementById('enderecoCaixaInput');
+  const infoEl = document.getElementById('enderecoCadastradoInfo');
   if(codeInp) codeInp.value='';
   if(qtdInp) qtdInp.value=1;
-  if(endInp) endInp.value='';
+  if(endInp) { endInp.value=''; endInp.placeholder='Endereço / Cód. Barras (ex.: RUA5-6B ou em branco para Automático)'; }
+  if(infoEl) infoEl.style.display='none';
   preencherSelectEnderecosCaixa();
   ultCaixa();if(typeof ult==='function')ult();dash();map();if(typeof buscarProduto==='function')buscarProduto();
+}
+
+function aoDigitarCodigoProdutoCaixa(rawVal) {
+  const infoEl = document.getElementById('enderecoCadastradoInfo');
+  const txtEl = document.getElementById('txtEnderecoCadastrado');
+  const inputEnd = document.getElementById('enderecoCaixaInput');
+  if (!rawVal || !rawVal.trim()) {
+    if (infoEl) infoEl.style.display = 'none';
+    if (inputEnd) inputEnd.placeholder = 'Endereço / Cód. Barras (ex.: RUA5-6B ou em branco para Automático)';
+    return;
+  }
+  const info = extrairCodigoProduto(rawVal);
+  if (!info.valido) {
+    if (infoEl) infoEl.style.display = 'none';
+    return;
+  }
+  const code = info.codigo_produto;
+  const endCadastrado = typeof window.obterEnderecoPulmaoProduto === 'function' ? window.obterEnderecoPulmaoProduto(code) : '';
+  const prodName = lookup(code);
+  const qpc = typeof getQtdPorCaixa === 'function' ? getQtdPorCaixa(code) : 0;
+
+  if (endCadastrado) {
+    if (infoEl) {
+      infoEl.style.display = 'block';
+      if (txtEl) txtEl.textContent = endCadastrado + (prodName && !prodName.startsWith('Código não') ? ' — ' + prodName + (qpc ? ' (' + qpc + ' un/cx)' : '') : '');
+    }
+    if (inputEnd && !inputEnd.value.trim()) {
+      inputEnd.placeholder = 'Sugerido: ' + endCadastrado + ' (ou digite outro)';
+    }
+  } else if (prodName && !prodName.startsWith('Código não')) {
+    if (infoEl) {
+      infoEl.style.display = 'block';
+      if (txtEl) txtEl.innerHTML = '<span style="color:#d97706">Sem endereço fixo cadastrado</span> — ' + esc(prodName) + (qpc ? ' (' + qpc + ' un/cx)' : '');
+    }
+  } else {
+    if (infoEl) infoEl.style.display = 'none';
+  }
+}
+
+function aplicarEnderecoCadastrado() {
+  const rawInput = document.getElementById('codigoProdutoCaixa').value;
+  const info = extrairCodigoProduto(rawInput);
+  if (!info.valido) return;
+  const endCadastrado = typeof window.obterEnderecoPulmaoProduto === 'function' ? window.obterEnderecoPulmaoProduto(info.codigo_produto) : '';
+  if (endCadastrado) {
+    const inputEnd = document.getElementById('enderecoCaixaInput');
+    if (inputEnd) inputEnd.value = endCadastrado;
+  }
 }
 
 function adicionarCaixasPorProduto(){
@@ -443,6 +697,16 @@ function adicionarCaixasPorProduto(){
     }
     executarAlocacaoCaixas(code, qtd, operador, [targetP], codigo_barras);
     return;
+  }
+
+  // Se nenhum endereço digitado manualmente e é 1 caixa, verifica endereço mestre cadastrado
+  const endCadastrado = typeof window.obterEnderecoPulmaoProduto === 'function' ? window.obterEnderecoPulmaoProduto(code) : '';
+  if (endCadastrado && qtd === 1) {
+    const targetP = encontrarPosicaoPorCodigoOuTexto(endCadastrado);
+    if (targetP && !used.has(targetP.id)) {
+      executarAlocacaoCaixas(code, qtd, operador, [targetP], codigo_barras);
+      return;
+    }
   }
 
   const existingBoxes = stored().filter(b => (b.productCodes || []).map(normalCode).includes(code));
@@ -501,19 +765,30 @@ function retirarPorCodigoNoMapa(){
   });
 
   if (!candidates.length) {
-    msg.textContent = 'Caixa ou produto com código "' + codigo_produto + '" não foi encontrado no pulmão. Confira o código.';
+    const endCadastrado = typeof window.obterEnderecoPulmaoProduto === 'function' ? window.obterEnderecoPulmaoProduto(codigo_produto) : '';
+    const prodDesc = lookup(codigo_produto);
+    if (endCadastrado || (prodDesc && !prodDesc.startsWith('Código ' + codigo_produto) && !prodDesc.startsWith('Código não'))) {
+      msg.innerHTML = `⚠️ <b>Nenhuma caixa física deste produto está atualmente no pulmão (Estoque = 0 caixas).</b><br>` +
+        `Produto: <b>${esc(codigo_produto)}</b> — ${esc(prodDesc || 'Não cadastrado')}<br>` +
+        (endCadastrado ? `📍 <b>Endereço fixo no Pulmão:</b> <span style="color:#2563eb;font-weight:bold">${esc(endCadastrado)}</span>` : '<span class="small" style="color:#64748b">Sem endereço fixo cadastrado para este SKU.</span>');
+    } else {
+      msg.textContent = 'Caixa ou produto com código "' + codigo_produto + '" não foi encontrado no pulmão. Confira o código.';
+    }
     return;
   }
 
   const b = candidates[0];
   const produto = (b.products || []).find(x => normalCode(x.code) === codigo_produto) || (b.products && b.products[0]) || {};
+  const endCadastrado = typeof window.obterEnderecoPulmaoProduto === 'function' ? window.obterEnderecoPulmaoProduto(produto.code || codigo_produto) : '';
 
-  msg.innerHTML = '<b>Caixa encontrada.</b><br>Caixa: ' + esc(b.box) +
-    '<br>Código Produto (5 dígitos): <b>' + esc(produto.code || codigo_produto) + '</b>' +
+  msg.innerHTML = '<b>✓ Caixa física encontrada no pulmão!</b><br>Caixa: <b>' + esc(b.box) + '</b>' +
+    '<br>Código Produto: <b>' + esc(produto.code || codigo_produto) + '</b>' +
     (b.barcode && b.barcode !== codigo_produto ? '<br>Código de Barras Original: <code>' + esc(b.barcode) + '</code>' : '') +
     '<br>Produto: ' + esc(produto?.name || lookup(codigo_produto) || '-') +
-    '<br><b>Endereço: ' + esc(b.address) + '</b><br><br>' +
-    '<button class="red" onclick="confirmarRetiradaMapa(\'' + esc(b.box) + '\')">Confirmar retirada</button> ' +
+    '<br>📍 <b>Posição Atual no Pulmão: <span style="color:#059669;font-weight:bold">' + esc(b.address) + '</span></b>' +
+    (endCadastrado && endCadastrado !== b.address ? '<br><span class="small" style="color:#64748b">Endereço mestre de cadastro: ' + esc(endCadastrado) + '</span>' : '') +
+    '<br><br>' +
+    '<button class="red" onclick="confirmarRetiradaMapa(\'' + esc(b.box) + '\')">Confirmar retirada da caixa</button> ' +
     '<button class="gray" onclick="document.getElementById(\'retiradaMapaInfo\').style.display=\'none\'">Cancelar</button>';
 }
 async function confirmarRetiradaMapa(boxId){
@@ -569,109 +844,192 @@ async function confirmarRetiradaMapa(boxId){
   ultCaixa();if(typeof ult==='function')ult();dash();map();if(typeof buscarProduto==='function')buscarProduto();
 }
 function normAddr(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'')}
-function map(){
- const posList = (typeof window !== 'undefined' && window.POS) ? window.POS : (typeof POS !== 'undefined' ? POS : []);
- const CAPACIDADE = posList.length;
- const ruaEl = document.getElementById('rua');
- const buscaEl = document.getElementById('busca');
- let r = ruaEl ? ruaEl.value : 'TODAS';
- let q = String(buscaEl ? buscaEl.value : '').toLowerCase();
- let storedBoxes = stored();
- const occupiedByAddress = new Map(storedBoxes.map(b => [normAddr(b.address), b]));
- 
- let arr = posList.filter(p => p.rua !== 'PALETE' && ['A','B','C','D','E'].includes(p.col))
-                  .filter(p => (r === 'TODAS' || p.rua === r) && 
-                    (!q || p.id.toLowerCase().includes(q) || storedBoxes.some(b => normAddr(b.address) === normAddr(p.id) && (
-                      String(b.box || '').toLowerCase().includes(q) || 
-                      String(b.nf || '').toLowerCase().includes(q) || 
-                      (b.products || []).some(x => String(x.code || '').toLowerCase().includes(q) || String(x.name || '').toLowerCase().includes(q) || String(x.family || '').toLowerCase().includes(q))
-                    ))));
-
- const ocupadosSet = new Set(storedBoxes.map(b => normAddr(b.address)).filter(Boolean));
- let ocupados = Math.min(CAPACIDADE, ocupadosSet.size);
- let livres = Math.max(0, CAPACIDADE - ocupados);
- let perc = CAPACIDADE ? Math.min(100, (ocupados / CAPACIDADE) * 100) : 0;
-
- const pm = document.getElementById('percMapa');
- const rm = document.getElementById('resumoMapa');
- const vm = document.getElementById('vagasMapa');
- if(pm) pm.textContent = perc.toFixed(1).replace('.', ',') + '%';
- if(rm) rm.textContent = ocupados.toLocaleString('pt-BR') + ' de ' + CAPACIDADE.toLocaleString('pt-BR') + ' caixas';
- if(vm) vm.textContent = livres.toLocaleString('pt-BR') + ' vagas livres';
-
- let g = {};
- arr.forEach(p => {
-   g[p.rua] = g[p.rua] || {};
-   g[p.rua][p.rack] = g[p.rua][p.rack] || [];
-   g[p.rua][p.rack].push(p);
- });
-
- let out = '';
- for (let rr of Object.keys(g)) {
-   out += `<div class="map"><h2 style="margin-bottom:12px">${rr}</h2><div class="rack-grid">`;
-   for (let rk of Object.keys(g[rr]).sort((a, b) => Number(a) - Number(b))) {
-     let a = g[rr][rk];
-     let totalRackVagas = (rr === 'RUA 6') ? (14 * 21) : (7 * 21); // 5 cols vs 4 cols
-     let occupiedRackCount = a.filter(p => occupiedByAddress.has(normAddr(p.id))).length;
-     
-     out += `<div class="rack-card">`;
-     out += `<div class="rack-title"><h3>Rack ${String(rk).padStart(2, '0')}</h3><span class="rack-badge">${occupiedRackCount} ocupada(s) / ${a.length} vagas</span></div>`;
-     out += `<div class="columns-container">`;
-     
-     for (let col of ['A', 'B', 'C', 'D', 'E']) {
-       const isColADisabled = (col === 'A' && (rr === 'RUA 5' || rr === 'RUA 7'));
-       out += `<div class="column-block">`;
-       out += `<div class="column-header ${isColADisabled ? 'disabled-col' : ''}">${col}${isColADisabled ? ' (Montagem)' : ''}</div>`;
-       out += `<div class="column-stack">`;
-       
-       if (isColADisabled) {
-         for (let l = 21; l >= 1; l--) {
-           out += `<div class="cell-vertical disabled" title="Coluna A com caixas para montagem"><span class="cell-level">P${String(l).padStart(2,'0')}</span><span class="cell-status">MONT</span></div>`;
-         }
-       } else {
-         for (let l = 21; l >= 1; l--) {
-           let p = a.find(x => x.linha === l && x.col === col);
-           if (!p) continue;
-           let b = occupiedByAddress.get(normAddr(p.id));
-           out += `<div class="cell-vertical ${b ? 'occ' : ''}" onclick="det('${p.id}')">`;
-           out += `<span class="cell-level">P${String(l).padStart(2,'0')}</span>`;
-           out += `<span class="cell-status">${b ? (b.products && b.products[0] ? b.products[0].family : b.box) : 'LIVRE'}</span>`;
-           out += `</div>`;
-         }
-       }
-       
-       out += `</div></div>`;
-     }
-     
-     out += `</div></div>`;
-   }
-   out += `</div></div>`;
- }
-
- const mapaEl = document.getElementById('mapa');
- if (mapaEl) mapaEl.innerHTML = out || '<div class="card">Nenhuma posição encontrada.</div>';
+function atualizarSelectRuas() {
+  const sel = document.getElementById('rua');
+  if (!sel) return;
+  const valAtual = sel.value;
+  const posList = (typeof POS !== 'undefined') ? POS : [];
+  const ruasUnicas = [...new Set(posList.map(p => p.rua).filter(r => r && r !== 'PALETE'))].sort((a,b) => a.localeCompare(b, undefined, { numeric: true }));
+  const ruas = ['TODAS', ...ruasUnicas];
+  const optionsHtml = ruas.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  if (sel.innerHTML !== optionsHtml) {
+    sel.innerHTML = optionsHtml;
+    if (ruas.includes(valAtual)) {
+      sel.value = valAtual;
+    } else {
+      sel.value = 'TODAS';
+    }
+  }
+  if (!sel.value || !ruas.includes(sel.value)) sel.value = 'TODAS';
 }
+function map(){
+  if (typeof garantirPosicoesParaEnderecos === 'function') garantirPosicoesParaEnderecos();
+  atualizarSelectRuas();
+  const posList = (typeof window !== 'undefined' && window.POS) ? window.POS : (typeof POS !== 'undefined' ? POS : []);
+  const CAPACIDADE = posList.length;
+  const ruaEl = document.getElementById('rua');
+  const buscaEl = document.getElementById('busca');
+  let r = (ruaEl && ruaEl.value && ruaEl.value.trim()) ? ruaEl.value.trim() : 'TODAS';
+  let q = String(buscaEl ? buscaEl.value : '').trim().toLowerCase();
+  let storedBoxes = stored();
+
+  const occupiedByAddress = new Map();
+  storedBoxes.forEach(b => {
+    if (b.status === 'ARMAZENADA') {
+      const k1 = canonicalAddressKey(b.address);
+      const k2 = normAddr(b.address);
+      if (k1) occupiedByAddress.set(k1, b);
+      if (k2) occupiedByAddress.set(k2, b);
+    }
+  });
+
+  let arr = posList.filter(p => p.rua !== 'PALETE' && ['A','B','C','D','E'].includes(p.col))
+                   .filter(p => (r === 'TODAS' || p.rua === r) && 
+                     (!q || p.id.toLowerCase().includes(q) || storedBoxes.some(b => (canonicalAddressKey(b.address) === canonicalAddressKey(p.id) || normAddr(b.address) === normAddr(p.id)) && (
+                       String(b.box || '').toLowerCase().includes(q) || 
+                       String(b.nf || '').toLowerCase().includes(q) || 
+                       (b.products || []).some(x => String(x.code || '').toLowerCase().includes(q) || String(x.name || '').toLowerCase().includes(q) || String(x.family || '').toLowerCase().includes(q))
+                     ))));
+
+  const ocupadosSet = new Set(storedBoxes.map(b => canonicalAddressKey(b.address) || normAddr(b.address)).filter(Boolean));
+  let ocupados = Math.min(CAPACIDADE, ocupadosSet.size);
+  let livres = Math.max(0, CAPACIDADE - ocupados);
+  let perc = CAPACIDADE ? Math.min(100, (ocupados / CAPACIDADE) * 100) : 0;
+
+  const pm = document.getElementById('percMapa');
+  const rm = document.getElementById('resumoMapa');
+  const vm = document.getElementById('vagasMapa');
+  if(pm) pm.textContent = perc.toFixed(1).replace('.', ',') + '%';
+  if(rm) rm.textContent = ocupados.toLocaleString('pt-BR') + ' de ' + CAPACIDADE.toLocaleString('pt-BR') + ' caixas';
+  if(vm) vm.textContent = livres.toLocaleString('pt-BR') + ' vagas livres';
+
+  let g = {};
+  arr.forEach(p => {
+    g[p.rua] = g[p.rua] || {};
+    g[p.rua][p.rack] = g[p.rua][p.rack] || [];
+    g[p.rua][p.rack].push(p);
+  });
+
+  let out = '';
+  for (let rr of Object.keys(g)) {
+    out += `<div class="map"><h2 style="margin-bottom:12px">${rr}</h2><div class="rack-grid">`;
+    for (let rk of Object.keys(g[rr]).sort((a, b) => Number(a) - Number(b))) {
+      let a = g[rr][rk];
+      let occupiedRackCount = a.filter(p => occupiedByAddress.has(canonicalAddressKey(p.id)) || occupiedByAddress.has(normAddr(p.id))).length;
+      
+      out += `<div class="rack-card">`;
+      out += `<div class="rack-title"><h3>Rack ${String(rk).padStart(2, '0')}</h3><span class="rack-badge">${occupiedRackCount} ocupada(s) / ${a.length} vagas</span></div>`;
+      out += `<div class="columns-container">`;
+
+      const maxLinha = Math.max(21, ...a.map(x => Number(x.linha) || 1));
+      
+      for (let col of ['A', 'B', 'C', 'D', 'E']) {
+        const isColADisabled = (col === 'A' && (rr === 'RUA 5' || rr === 'RUA 7'));
+        out += `<div class="column-block">`;
+        out += `<div class="column-header ${isColADisabled ? 'disabled-col' : ''}">${col}${isColADisabled ? ' (Montagem)' : ''}</div>`;
+        out += `<div class="column-stack">`;
+        
+        for (let l = maxLinha; l >= 1; l--) {
+          let p = a.find(x => Number(x.linha) === l && x.col === col);
+          if (!p) continue;
+          let b = occupiedByAddress.get(canonicalAddressKey(p.id)) || occupiedByAddress.get(normAddr(p.id));
+          if (b) {
+            out += `<div class="cell-vertical occ" onclick="det('${p.id}')">`;
+            out += `<span class="cell-level">P${String(l).padStart(2,'0')}</span>`;
+            out += `<span class="cell-status">${esc(b.products && b.products[0] ? b.products[0].family : b.box)}</span>`;
+            out += `</div>`;
+          } else if (isColADisabled) {
+            out += `<div class="cell-vertical disabled" title="Coluna A com caixas para montagem"><span class="cell-level">P${String(l).padStart(2,'0')}</span><span class="cell-status">MONT</span></div>`;
+          } else {
+            out += `<div class="cell-vertical" onclick="det('${p.id}')">`;
+            out += `<span class="cell-level">P${String(l).padStart(2,'0')}</span>`;
+            out += `<span class="cell-status">LIVRE</span>`;
+            out += `</div>`;
+          }
+        }
+        
+        out += `</div></div>`;
+      }
+      
+      out += `</div></div>`;
+    }
+    out += `</div></div>`;
+  }
+
+  const mapaEl = document.getElementById('mapa');
+  if (mapaEl) mapaEl.innerHTML = out || '<div class="card">Nenhuma posição encontrada.</div>';
+}
+
+function closeM(){
+  const modal = document.getElementById('modal');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
+}
+window.closeM = closeM;
+window.fecharModal = closeM;
+
 function det(id){
-  let p=POS.find(x=>normAddr(x.id)===normAddr(id)),b=stored().find(x=>normAddr(x.address)===normAddr(id));
-  if(!p){return}
-  mb.innerHTML=`<h2>${id}</h2><p class="small">${p.rua} • Rack ${p.rack} • Linha ${p.linha} • Repartição ${p.col}</p>`+(b?`
+  if (typeof garantirPosicoesParaEnderecos === 'function') garantirPosicoesParaEnderecos();
+  let p = POS.find(x => canonicalAddressKey(x.id) === canonicalAddressKey(id) || normAddr(x.id) === normAddr(id));
+  let b = stored().find(x => canonicalAddressKey(x.address) === canonicalAddressKey(id) || normAddr(x.address) === normAddr(id));
+  if (!p && b) {
+    p = { id, rua: '', rack: '', linha: '', col: '' };
+  }
+  if (!p) return;
+  const mb = document.getElementById('mb');
+  const modal = document.getElementById('modal');
+  if (!mb || !modal) return;
+
+  mb.innerHTML = `<h2>${esc(id)}</h2><p class="small">${esc(p.rua || '')} • Rack ${esc(p.rack || '')} • Linha ${esc(p.linha || '')} • Repartição ${esc(p.col || '')}</p>` + (b ? `
     <p><b>Status:</b> <span style="color:#b91c1c;font-weight:800">OCUPADA</span></p>
-    <p><b>Caixa:</b> ${b.box}</p>
-    <p><b>NF:</b> ${b.nf}</p>
-    <p><b>Fornecedor:</b> ${b.fornecedor||'-'}</p>
-    <p><b>Adicionada por:</b> ${b.addedBy||b.operator||'-'}</p>
+    <p><b>Caixa:</b> ${esc(b.box)}</p>
+    <p><b>NF:</b> ${esc(b.nf)}</p>
+    <p><b>Fornecedor:</b> ${esc(b.fornecedor||'-')}</p>
+    <p><b>Adicionada por:</b> ${esc(b.addedBy||b.operator||'-')}</p>
     <hr>
     <p><b>Produtos da caixa:</b></p>
-    <ul>${(b.products||[]).map(x=>`<li><b>${x.code}</b> — ${x.name} <span class="small">[${x.family}]</span></li>`).join('')||'<li>Sem produtos cadastrados</li>'}</ul>
-    <div class="toolbar" style="margin-top:12px;gap:8px">
-      <button class="red" onclick="ret('${b.box}')">🗑️ Retirar esta caixa</button>
-      <button class="gray" onclick="closeM()">Voltar / Fechar</button>
-    </div>`:`<p>🟩 Posição livre.</p><button class="gray" onclick="closeM()">Fechar</button>`);
+    <ul>${(b.products||[]).map(x=>`<li><b>${esc(x.code)}</b> — ${esc(x.name)} <span class="small">[${esc(x.family)}]</span></li>`).join('')||'<li>Sem produtos cadastrados</li>'}</ul>
+    <div class="toolbar" style="margin-top:16px;gap:8px">
+      <button class="red" onclick="ret('${esc(b.box)}')">🗑️ Retirar esta caixa</button>
+      <button type="button" class="gray" onclick="closeM()">Voltar / Fechar</button>
+    </div>` : `
+    <p>🟩 Posição livre.</p>
+    <div class="toolbar" style="margin-top:16px">
+      <button type="button" class="gray" onclick="closeM()">Fechar</button>
+    </div>`);
+
   modal.classList.add('open');
+  modal.style.display = 'flex';
 }
-function buscarProduto(){let q=document.getElementById('produtoBusca').value.trim().toLowerCase(),el=document.getElementById('produtoResultado');if(!q){el.innerHTML='';return}let found=[];for(const [code,name] of Object.entries(PRODUTOS)){if(code.includes(q)||name.toLowerCase().includes(q)){found.push({code,name});if(found.length>=30)break}}let storedHits=stored().filter(b=>(b.products||[]).some(x=>x.code.includes(q)||x.name.toLowerCase().includes(q)||x.family.toLowerCase().includes(q)));const totalCaixas=storedHits.length;
-const resumo=found.map(x=>{const n=stored().filter(b=>(b.products||[]).some(p=>p.code===x.code)).length;return {x,n}});
-el.innerHTML='<p class="small">'+found.length+' produto(s) encontrados na base. '+totalCaixas+' caixa(s) armazenadas correspondentes.</p>'+(found.length?'<table><tr><th>Código</th><th>Descrição</th><th>Linha</th><th>Caixas</th></tr>'+resumo.map(({x,n})=>`<tr><td><b>${x.code}</b></td><td>${x.name}</td><td>${family(x.name)}</td><td><b>${n}</b></td></tr>`).join('')+'</table>':'<div class="notice">Nenhum produto encontrado.</div>')+(storedHits.length?'<h3>Caixas armazenadas</h3><table><tr><th>Caixa</th><th>NF</th><th>Produto</th><th>Endereço</th></tr>'+storedHits.map(b=>`<tr><td>${b.box}</td><td>${b.nf}</td><td>${(b.products||[]).filter(x=>x.code.includes(q)||x.name.toLowerCase().includes(q)||x.family.toLowerCase().includes(q)).map(x=>x.code+' — '+x.name).join('<br>')}</td><td>${b.address}</td></tr>`).join('')+'</table>':'')}
+function buscarProduto(){
+  let q=document.getElementById('produtoBusca').value.trim().toLowerCase(),el=document.getElementById('produtoResultado');
+  if(!q){el.innerHTML='';return}
+  let found=[];
+  for(const [code,name] of Object.entries(PRODUTOS)){
+    if(code.includes(q)||name.toLowerCase().includes(q)){
+      found.push({code,name});
+      if(found.length>=30)break;
+    }
+  }
+  let storedHits=stored().filter(b=>(b.products||[]).some(x=>x.code.includes(q)||x.name.toLowerCase().includes(q)||x.family.toLowerCase().includes(q)));
+  const totalCaixas=storedHits.length;
+  const resumo=found.map(x=>{
+    const n=stored().filter(b=>(b.products||[]).some(p=>p.code===x.code)).length;
+    return {x,n};
+  });
+
+  el.innerHTML='<p class="small">'+found.length+' produto(s) encontrados na base. '+totalCaixas+' caixa(s) física(s) em estoque.</p>'+
+    (found.length?'<table><tr><th>Código</th><th>Descrição</th><th>Linha</th><th>Endereço Pulmão</th><th>Caixas em Estoque</th></tr>'+
+      resumo.map(({x,n})=>{
+        const end=(typeof window.obterEnderecoPulmaoProduto==='function')?window.obterEnderecoPulmaoProduto(x.code):'';
+        const endBadge=end?`<span class="badge-status valido">${esc(end)}</span>`:'<span class="small" style="color:#94a3b8">—</span>';
+        return `<tr><td><b>${esc(x.code)}</b></td><td>${esc(x.name)}</td><td>${esc(family(x.name))}</td><td>${endBadge}</td><td><b>${n}</b></td></tr>`;
+      }).join('')+'</table>':'<div class="notice">Nenhum produto encontrado.</div>')+
+    (storedHits.length?'<h3>Caixas físicas armazenadas</h3><table><tr><th>Caixa</th><th>NF</th><th>Produto</th><th>Endereço Atual</th></tr>'+
+      storedHits.map(b=>`<tr><td>${esc(b.box)}</td><td>${esc(b.nf)}</td><td>${(b.products||[]).filter(x=>x.code.includes(q)||x.name.toLowerCase().includes(q)||x.family.toLowerCase().includes(q)).map(x=>esc(x.code)+' — '+esc(x.name)).join('<br>')}</td><td><b>${esc(b.address)}</b></td></tr>`).join('')+'</table>':'');
+}
 function limparProduto(){document.getElementById('produtoBusca').value='';document.getElementById('produtoResultado').innerHTML=''}
 async function ret(id){
   let b=boxes.find(x=>x.box===id && x.status==='ARMAZENADA');
@@ -717,55 +1075,535 @@ async function ret(id){
   if(typeof ultCaixa==='function') ultCaixa();
   if(typeof buscarProduto==='function') buscarProduto();
 }
-function closeM(){modal.classList.remove('open')}
-function mov(){let q=ms.value.toLowerCase(),a=[...moves].reverse().filter(x=>Object.values(x).join(' ').toLowerCase().includes(q));mt.innerHTML='<table><tr><th>Data</th><th>Ação</th><th>Caixa</th><th>NF</th><th>Endereço</th><th>Produtos</th><th>Operador</th></tr>'+a.map(x=>`<tr><td>${new Date(x.when).toLocaleString('pt-BR')}</td><td>${x.action}</td><td>${x.box}</td><td>${x.nf}</td><td>${x.address}</td><td>${x.productNames||'-'}</td><td>${x.operator||'-'}</td></tr>`).join('')+'</table>'}
+function mov(){
+  const msEl = document.getElementById('ms');
+  const mtEl = document.getElementById('mt');
+  if (!mtEl) return;
+  const q = String(msEl ? msEl.value : '').toLowerCase();
+  const a = [...moves].reverse().filter(x => Object.values(x).join(' ').toLowerCase().includes(q));
+  mtEl.innerHTML = '<table><tr><th>Data</th><th>Ação</th><th>Caixa</th><th>NF</th><th>Endereço</th><th>Produtos</th><th>Operador</th></tr>' + a.map(x => `<tr><td>${new Date(x.when).toLocaleString('pt-BR')}</td><td>${x.action}</td><td>${x.box}</td><td>${x.nf}</td><td>${x.address}</td><td>${x.productNames||'-'}</td><td>${x.operator||'-'}</td></tr>`).join('') + '</table>';
+}
 function csv(){let rows=[['Data','Ação','Caixa','NF','Endereço','Códigos','Produtos','Operador'],...moves.map(x=>[x.when,x.action,x.box,x.nf,x.address,x.productCodes||'',x.productNames||'',x.operator||''])];let s=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(';')).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+s],{type:'text/csv;charset=utf-8'}));a.download='pulmao_movimentacoes.csv';a.click()}
 function normalizarCabecalho(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 function valorColuna(row,possiveis){const mapa={};Object.keys(row).forEach(k=>mapa[normalizarCabecalho(k)]=row[k]);for(const p of possiveis){const v=mapa[normalizarCabecalho(p)];if(v!==undefined&&v!==null&&String(v).trim()!=='')return v}return ''}
-function importarPlanilhaPulmao(){
- const input=document.getElementById('planilhaPulmao'),msg=document.getElementById('resultadoImportacaoPulmao'),f=input?.files?.[0];
- if(!f){alert('Selecione uma planilha Excel.');return}
- if(typeof XLSX==='undefined'){alert('O leitor de Excel não carregou. Abra o app com internet e tente novamente.');return}
- const reader=new FileReader();reader.onload=function(e){
-  try{
-   const wb=XLSX.read(e.target.result,{type:'array',cellDates:false});
-   let rows=[];wb.SheetNames.forEach(name=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[name],{defval:'',raw:false}));});
-   const posMap=new Map(POS.map(p=>[String(p.id).trim().toUpperCase(),p]));
-   const valid=[],erros=[],enderecos=new Set();
-   const chave=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
-   const valorFlex=(row,nomes)=>{const mapa={};Object.keys(row||{}).forEach(k=>mapa[chave(k)]=row[k]);for(const n of nomes){const v=mapa[chave(n)];if(v!==undefined&&String(v).trim()!=='')return v;}return '';};
-   const montarEndereco=row=>{
-    const direto=String(valorFlex(row,['Endereço no Pulmão','Endereco no Pulmao','Endereço','Endereco','Localização','Localizacao','Posição','Posicao','Address'])).trim();
-    if(direto)return direto.toUpperCase().replace(/\s+/g,'');
-    const rua=String(valorFlex(row,['Nome estacao','Nome estação','Rua','RUA'])).trim().toUpperCase().replace(/\s+/g,'');
-    const rack=String(valorFlex(row,['Nr Rack','Rack','Número Rack','Numero Rack'])).trim();
-    const linha=String(valorFlex(row,['Linha','Nº Linha','Numero Linha'])).trim();
-    const coluna=String(valorFlex(row,['Coluna','Col'])).trim().toUpperCase();
-    if(!rua||!rack||!linha||!coluna)return '';
-    const r=rua.replace(/^RUA0*/,'RUA');
-    const nRack=String(Number(rack)); const nLinha=String(Number(linha));
-    const c=coluna.replace(/[^A-E]/g,'').slice(0,1);
-    if(!/^RUA\d+$/.test(r)||!nRack||!nLinha||!c)return '';
-    return `${r}-R${nRack.padStart(2,'0')}-L${nLinha.padStart(2,'0')}-${c}`;
-   };
-   rows.forEach((row,i)=>{
-    const codigo=normalCode(valorFlex(row,['Codigo Material','Código Material','Código do Produto','Codigo do Produto','Código','Codigo','Cod','Material','Produto']));
-    const endereco=montarEndereco(row);
-    if(!codigo||codigo==='00000')return;
-    if(!endereco){erros.push('Linha '+(i+2)+': não foi possível montar o endereço a partir de Nome estacao, Nr Rack, Linha e Coluna.');return}
-    const p=posMap.get(endereco);
-    if(!p){erros.push('Linha '+(i+2)+': endereço não encontrado — '+endereco);return}
-    if(enderecos.has(endereco)){erros.push('Linha '+(i+2)+': endereço repetido — '+endereco);return}
-    enderecos.add(endereco);valid.push({p,codigo});
-   });
-   const antigos=boxes.length;boxes=boxes.filter(b=>b.origem!=='PLANILHA_ENDERECAMENTO');
-   const now=new Date().toISOString();let seqLocal=seq;
-   valid.forEach(x=>{seqLocal++;const box='EST-'+String(seqLocal).padStart(6,'0');const name=lookup(x.codigo)||'Código '+x.codigo;boxes.push({box,nf:'ESTOQUE ATUAL',serie:'',fornecedor:'',operator:'Importação Excel',address:x.p.id,status:'ARMAZENADA',entrada:now,productCodes:[x.codigo],products:[{code:x.codigo,name,family:family(name)}],unidadesPorCaixa:getQtdPorCaixa(x.codigo),origem:'PLANILHA_ENDERECAMENTO'});});
-   seq=seqLocal;save();ultCaixa();ult();dash();map();buscarProduto();
-   msg.style.display='block';msg.innerHTML='<b>Importação concluída.</b> '+valid.length+' endereço(s) alocado(s), '+(rows.length-valid.length)+' linha(s) ignorada(s). Foram substituídas '+(antigos-boxes.filter(b=>b.origem!=='PLANILHA_ENDERECAMENTO').length)+' alocações antigas da planilha.'+(erros.length?'<br><br><b>Avisos:</b><br>'+erros.slice(0,20).map(esc).join('<br>'):'');
-  }catch(err){console.error(err);alert('Não foi possível ler a planilha. Confira se é um arquivo Excel válido.');}
-  input.value='';
- };reader.readAsArrayBuffer(f);
+// ==========================================
+// IMPORTAÇÃO DE ENDEREÇAMENTO DO PULMÃO (WIZARD)
+// ==========================================
+
+let _linhasPlanilhaPulmaoCarregadas = [];
+let _itensValidosParaImportar = [];
+window._getItensValidosParaImportar = () => _itensValidosParaImportar;
+window._setItensValidosParaImportar = (val) => { _itensValidosParaImportar = val; };
+
+function normalizarCodigoPlanilha(val) {
+  if (val === undefined || val === null) return '';
+  let str = String(val).trim();
+  str = str.replace(/\.0+$/, ''); // Remove .0 de números float vindos do Excel
+  const digits = str.replace(/\D/g, '');
+  if (digits.length > 0 && digits.length <= 4) {
+    return digits.padStart(5, '0');
+  }
+  if (/^\d+$/.test(str)) {
+    return str;
+  }
+  return str.toUpperCase();
+}
+
+function normalizarEnderecoPlanilha(val) {
+  if (!val) return '';
+  return String(val).trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+async function lerPlanilhaParaLinhas(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'csv') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const text = e.target.result;
+          const firstLines = text.split(/\r?\n/).slice(0, 5).join('\n');
+          const countPontoVirgula = (firstLines.match(/;/g) || []).length;
+          const countVirgula = (firstLines.match(/,/g) || []).length;
+          const countTab = (firstLines.match(/\t/g) || []).length;
+
+          let sep = ',';
+          if (countPontoVirgula > countVirgula && countPontoVirgula > countTab) sep = ';';
+          else if (countTab > countVirgula) sep = '\t';
+
+          const wb = XLSX.read(text, { type: 'string', raw: false, FS: sep });
+          const sheetName = wb.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '', raw: false });
+          resolve(rows);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsText(file, 'UTF-8');
+    });
+  } else {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: 'array', cellDates: false, raw: false });
+          let rows = [];
+          wb.SheetNames.forEach(name => {
+            const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false });
+            if (sheetRows && sheetRows.length > 0) {
+              rows = rows.concat(sheetRows);
+            }
+          });
+          resolve(rows);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+}
+
+async function aoSelecionarPlanilhaPulmao(input) {
+  if (input && input.files && input.files[0]) {
+    await analisarPlanilhaPulmao();
+  }
+}
+
+async function analisarPlanilhaPulmao() {
+  const input = document.getElementById('planilhaPulmao');
+  const file = input?.files?.[0];
+  const msg = document.getElementById('resultadoImportacaoPulmao');
+  if (!file) {
+    alert('Selecione uma planilha Excel (.xlsx, .xls) ou CSV (.csv).');
+    return;
+  }
+  if (typeof XLSX === 'undefined') {
+    alert('Biblioteca de leitura de planilhas não carregada. Verifique sua conexão com a internet.');
+    return;
+  }
+
+  if (msg) {
+    msg.style.display = 'block';
+    msg.innerHTML = '⏳ <i>Lendo e analisando arquivo... Por favor, aguarde.</i>';
+  }
+
+  try {
+    const rows = await lerPlanilhaParaLinhas(file);
+    if (!rows || rows.length === 0) {
+      if (msg) {
+        msg.style.display = 'block';
+        msg.innerHTML = '<span style="color:#ef4444;font-weight:bold">Aviso:</span> O arquivo selecionado está vazio ou não contém dados legíveis.';
+      }
+      return;
+    }
+
+    _linhasPlanilhaPulmaoCarregadas = rows;
+
+    // Detectar todas as colunas disponíveis nas primeiras linhas
+    const colunasSet = new Set();
+    rows.slice(0, 20).forEach(r => {
+      Object.keys(r || {}).forEach(k => {
+        const clean = String(k).trim();
+        if (clean && !clean.startsWith('__EMPTY')) colunasSet.add(clean);
+      });
+    });
+    const colunas = Array.from(colunasSet);
+
+    if (colunas.length === 0) {
+      if (msg) {
+        msg.style.display = 'block';
+        msg.innerHTML = '<span style="color:#ef4444;font-weight:bold">Erro:</span> Não foi possível identificar as colunas na planilha.';
+      }
+      return;
+    }
+
+    // Preencher os selects de mapeamento
+    const selCod = document.getElementById('selectColunaCodigo');
+    const selEnd = document.getElementById('selectColunaEndereco');
+    if (selCod && selEnd) {
+      selCod.innerHTML = colunas.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+      selEnd.innerHTML = colunas.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+
+      // Heurística para código do produto
+      const candidatosCod = ['codigo material', 'código material', 'codigo do produto', 'código do produto', 'codigo', 'código', 'material', 'produto', 'sku', 'cod', 'item'];
+      const codEncontrado = colunas.find(c => {
+        const norm = c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return candidatosCod.some(cand => norm.includes(cand));
+      });
+      if (codEncontrado) selCod.value = codEncontrado;
+
+      // Heurística para endereço
+      const candidatosEnd = ['endereco no pulmao', 'endereço no pulmão', 'endereco', 'endereço', 'localizacao', 'localização', 'posicao', 'posição', 'pulmao', 'pulmão', 'address', 'rua', 'rack'];
+      const endEncontrado = colunas.find(c => {
+        const norm = c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return candidatosEnd.some(cand => norm.includes(cand));
+      });
+      if (endEncontrado) selEnd.value = endEncontrado;
+    }
+
+    const containerMap = document.getElementById('containerMapeamentoColunas');
+    if (containerMap) containerMap.style.display = 'block';
+
+    if (msg) msg.style.display = 'none';
+
+    gerarPreviaImportacao();
+
+  } catch (err) {
+    console.error('Erro ao ler planilha:', err);
+    if (msg) {
+      msg.style.display = 'block';
+      msg.innerHTML = '<span style="color:#ef4444;font-weight:bold">Erro ao processar arquivo:</span> ' + esc(err.message || 'Formato incompatível.');
+    }
+  }
+}
+
+function gerarPreviaImportacao() {
+  const selCod = document.getElementById('selectColunaCodigo');
+  const selEnd = document.getElementById('selectColunaEndereco');
+  const colCod = selCod ? selCod.value : '';
+  const colEnd = selEnd ? selEnd.value : '';
+
+  if (!_linhasPlanilhaPulmaoCarregadas || !_linhasPlanilhaPulmaoCarregadas.length || !colCod || !colEnd) {
+    return;
+  }
+
+  let totalLinhas = _linhasPlanilhaPulmaoCarregadas.length;
+  let validos = 0;
+  let naoCadastrados = 0;
+  let invalidos = 0;
+
+  const itensParaSalvar = [];
+  const amostraTabela = [];
+
+  _linhasPlanilhaPulmaoCarregadas.forEach((row, idx) => {
+    const rawCod = row[colCod];
+    const rawEnd = row[colEnd];
+
+    const cod = normalizarCodigoPlanilha(rawCod);
+    const end = normalizarEnderecoPlanilha(rawEnd);
+    const pos = encontrarPosicaoPorCodigoOuTexto(end);
+
+    let statusText = '✓ Válido (Mapa)';
+    let statusBadgeClass = 'valido';
+
+    if (!cod || cod === '00000' || !end) {
+      statusText = '❌ Incompleto';
+      statusBadgeClass = 'erro';
+      invalidos++;
+    } else {
+      const prodName = lookup(cod);
+      const existeNoCatalogo = prodName && !prodName.startsWith('Código ' + cod) && !prodName.startsWith('Código não');
+      if (!existeNoCatalogo) {
+        naoCadastrados++;
+        statusText = '⚠️ Não cadastrado';
+        statusBadgeClass = 'aviso';
+      } else {
+        validos++;
+      }
+      itensParaSalvar.push({ codigo: cod, endereco: end, posId: pos ? pos.id : end });
+    }
+
+    if (idx < 10) {
+      amostraTabela.push({
+        linha: idx + 1,
+        codigo: cod || '(vazio)',
+        endereco: end || '(vazio)',
+        posicaoDetectada: pos ? pos.id : '⚠️ Posição não reconhecida',
+        produto: lookup(cod) || '—',
+        statusText,
+        statusBadgeClass
+      });
+    }
+  });
+
+  _itensValidosParaImportar = itensParaSalvar;
+
+  // Atualizar contadores
+  const elTotal = document.getElementById('statTotalLinhas');
+  const elVal = document.getElementById('statValidos');
+  const elNaoCad = document.getElementById('statNaoCadastrados');
+  const elInv = document.getElementById('statInvalidos');
+
+  if (elTotal) elTotal.textContent = totalLinhas.toLocaleString('pt-BR');
+  if (elVal) elVal.textContent = validos.toLocaleString('pt-BR');
+  if (elNaoCad) elNaoCad.textContent = naoCadastrados.toLocaleString('pt-BR');
+  if (elInv) elInv.textContent = invalidos.toLocaleString('pt-BR');
+
+  // Atualizar tabela de amostra
+  const tbody = document.getElementById('tbodyPreviaImportacao');
+  if (tbody) {
+    tbody.innerHTML = amostraTabela.map(item => `
+      <tr>
+        <td><b>#${item.linha}</b></td>
+        <td><code>${esc(item.codigo)}</code></td>
+        <td><b>${esc(item.posicaoDetectada)}</b> <span class="small" style="color:#64748b">(${esc(item.endereco)})</span></td>
+        <td>${esc(item.produto)}</td>
+        <td><span class="badge-status ${item.statusBadgeClass}">${item.statusText}</span></td>
+      </tr>
+    `).join('');
+  }
+
+  const containerPrevia = document.getElementById('containerPreviaImportacao');
+  if (containerPrevia) containerPrevia.style.display = 'block';
+}
+
+async function confirmarImportacaoEnderecamento() {
+  if (!_itensValidosParaImportar || _itensValidosParaImportar.length === 0) {
+    alert('Nenhum item válido para importar. Verifique o mapeamento das colunas.');
+    return;
+  }
+
+  const qtd = _itensValidosParaImportar.length;
+  const confirmar = confirm(`Deseja alocar ${qtd.toLocaleString('pt-BR')} caixas no Mapa do Pulmão e registrar os endereçamentos?\n\nAs caixas aparecerão imediatamente no Mapa do Pulmão como ocupadas.`);
+  if (!confirmar) return;
+
+  const btnConfirmar = document.getElementById('btnConfirmarImportacao');
+  const btnCancelar = document.getElementById('btnCancelarImportacao');
+  const containerProgresso = document.getElementById('containerProgressoImportacao');
+  const barraFill = document.getElementById('barraProgressoFill');
+  const txtPct = document.getElementById('txtPorcentagemProgresso');
+  const txtStatus = document.getElementById('txtStatusProgresso');
+  const msg = document.getElementById('resultadoImportacaoPulmao');
+
+  if (btnConfirmar) btnConfirmar.disabled = true;
+  if (btnCancelar) btnCancelar.disabled = true;
+  if (containerProgresso) containerProgresso.style.display = 'block';
+
+  try {
+    // 1. Criar e alocar as caixas físicas no pulmão para que apareçam no Mapa
+    // Regra estrita: 1 linha da planilha = 1 caixa individual = 1 posição = 1 código de produto
+    const now = new Date().toISOString();
+    let seqLocal = Number(seq) || 0;
+    const newBoxesCreated = [];
+    const usedAddresses = new Set();
+
+    // Preservar entradas manuais ou por NF já existentes
+    const existingBoxesPreservadas = boxes.filter(b => b.origem !== 'PLANILHA_ENDERECAMENTO');
+    existingBoxesPreservadas.forEach(b => {
+      if (b.status === 'ARMAZENADA') {
+        const k = canonicalAddressKey(b.address);
+        if (k) usedAddresses.add(k);
+        usedAddresses.add(normAddr(b.address));
+      }
+    });
+
+    _itensValidosParaImportar.forEach(item => {
+      const cleanCode = String(item.codigo || '').trim().padStart(5, '0');
+      if (!cleanCode || cleanCode === '00000') return;
+
+      const prodName = lookup(cleanCode) || ('Código ' + cleanCode);
+      const fam = family(prodName);
+      const qpc = typeof getQtdPorCaixa === 'function' ? getQtdPorCaixa(cleanCode) : 1;
+
+      // Localizar ou criar a posição única para esta caixa no pulmão
+      const pos = encontrarOuCriarPosicaoParaItem(item.endereco, usedAddresses) || (item.posId ? { id: item.posId } : null);
+      const posIdFinal = pos ? pos.id : (item.posId || item.endereco);
+
+      seqLocal++;
+      const boxId = 'EST-' + String(seqLocal).padStart(6, '0');
+      const novaCaixa = {
+        box: boxId,
+        nf: 'ESTOQUE ATUAL',
+        serie: '',
+        fornecedor: 'Planilha Pulmão',
+        operator: 'Importação Planilha',
+        address: posIdFinal,
+        status: 'ARMAZENADA',
+        entrada: now,
+        productCodes: [cleanCode], // ESTREITAMENTE 1 CÓDIGO POR CAIXA
+        products: [{ code: cleanCode, name: prodName, family: fam }], // ESTREITAMENTE 1 PRODUTO
+        unidadesPorCaixa: qpc,
+        origem: 'PLANILHA_ENDERECAMENTO'
+      };
+
+      usedAddresses.add(canonicalAddressKey(posIdFinal));
+      usedAddresses.add(normAddr(posIdFinal));
+      newBoxesCreated.push(novaCaixa);
+    });
+
+    boxes = [...existingBoxesPreservadas, ...newBoxesCreated];
+    seq = seqLocal;
+    save();
+
+    // Sincronizar inserção das caixas com Supabase se disponível
+    if (typeof window.syncAddBoxesToSupabase === 'function' && newBoxesCreated.length > 0) {
+      try {
+        await window.syncAddBoxesToSupabase(newBoxesCreated);
+      } catch(e) {
+        console.warn('Aviso sincronização caixas Supabase:', e);
+      }
+    }
+
+    // 2. Salvar o cadastro mestre dos endereços
+    if (typeof window.salvarEnderecosLoteSupabase === 'function') {
+      await window.salvarEnderecosLoteSupabase(_itensValidosParaImportar, (prog) => {
+        if (barraFill) barraFill.style.width = prog.percentual + '%';
+        if (txtPct) txtPct.textContent = prog.percentual + '%';
+        if (txtStatus) {
+          txtStatus.textContent = `Processando lote ${prog.loteAtual || 1} de ${prog.totalLotes || 1} (${prog.processados.toLocaleString('pt-BR')} de ${prog.total.toLocaleString('pt-BR')})...`;
+        }
+      });
+    }
+
+    // 3. Atualizar dashboard, mapa e visualização completa
+    atualizarSelectRuas();
+    dash();
+    map();
+    ultCaixa();
+    if (typeof ult === 'function') ult();
+    if (typeof buscarProduto === 'function') buscarProduto();
+
+    if (msg) {
+      msg.style.display = 'block';
+      msg.innerHTML = `
+        <div style="color:#059669;font-size:15px;font-weight:bold;margin-bottom:6px">✅ Caixas Alocadas com Sucesso no Mapa do Pulmão!</div>
+        <div>Foram criadas e posicionadas <b>${newBoxesCreated.length.toLocaleString('pt-BR')}</b> caixas no <b>Mapa do Pulmão</b> e registrados <b>${qtd.toLocaleString('pt-BR')}</b> endereçamentos mestre.</div>
+        <div class="small" style="margin-top:6px;color:#64748b">
+          • As caixas já estão visíveis no <b>Mapa do Pulmão</b> (1 caixa por posição, 1 código de produto por caixa).<br>
+          • Você pode clicar em qualquer posição no mapa para ver detalhes ou retirar caixas.
+        </div>
+      `;
+    }
+
+    // Fechar painéis de prévia
+    const containerPrevia = document.getElementById('containerPreviaImportacao');
+    const containerMap = document.getElementById('containerMapeamentoColunas');
+    if (containerPrevia) containerPrevia.style.display = 'none';
+    if (containerMap) containerMap.style.display = 'none';
+
+    const input = document.getElementById('planilhaPulmao');
+    if (input) input.value = '';
+    _linhasPlanilhaPulmaoCarregadas = [];
+    _itensValidosParaImportar = [];
+
+  } catch (err) {
+    console.error('Erro na importação:', err);
+    if (msg) {
+      msg.style.display = 'block';
+      msg.innerHTML = '<span style="color:#ef4444;font-weight:bold">Erro ao salvar endereçamentos:</span> ' + esc(err.message || 'Falha inesperada.');
+    }
+  } finally {
+    if (btnConfirmar) btnConfirmar.disabled = false;
+    if (btnCancelar) btnCancelar.disabled = false;
+    if (containerProgresso) containerProgresso.style.display = 'none';
+  }
+}
+
+function alocarCaixasDoCadastroDeEnderecos(silent) {
+  if (typeof garantirPosicoesParaEnderecos === 'function') garantirPosicoesParaEnderecos();
+  
+  let itens = [];
+  try {
+    itens = JSON.parse(localStorage.getItem('p5_1_lista_enderecos_linhas') || '[]');
+  } catch(e) {}
+
+  if (!itens || !itens.length) {
+    const mapa = window.MAPA_ENDERECOS_PRODUTOS || {};
+    const seen = new Set();
+    for (const [code, rawEnd] of Object.entries(mapa)) {
+      const clean = String(code).trim().padStart(5, '0');
+      if (clean && clean !== '00000' && rawEnd && !seen.has(clean)) {
+        seen.add(clean);
+        itens.push({ codigo: clean, endereco: rawEnd });
+      }
+    }
+  }
+
+  if (!itens.length) {
+    if (!silent) alert('Nenhum endereço cadastrado encontrado. Por favor, importe a planilha de endereçamento.');
+    return;
+  }
+
+  const now = new Date().toISOString();
+  let seqLocal = Number(seq) || 0;
+  const newBoxesCreated = [];
+  const usedAddresses = new Set();
+
+  const existingBoxesPreservadas = boxes.filter(b => b.origem !== 'PLANILHA_ENDERECAMENTO');
+  existingBoxesPreservadas.forEach(b => {
+    if (b.status === 'ARMAZENADA') {
+      const k = canonicalAddressKey(b.address);
+      if (k) usedAddresses.add(k);
+      usedAddresses.add(normAddr(b.address));
+    }
+  });
+
+  itens.forEach(item => {
+    const cleanCode = String(item.codigo).trim().padStart(5, '0');
+    if (!cleanCode || cleanCode === '00000' || !item.endereco) return;
+
+    const prodName = lookup(cleanCode) || ('Código ' + cleanCode);
+    const fam = family(prodName);
+    const qpc = typeof getQtdPorCaixa === 'function' ? getQtdPorCaixa(cleanCode) : 1;
+
+    const pos = encontrarOuCriarPosicaoParaItem(item.endereco, usedAddresses) || (item.posId ? { id: item.posId } : null);
+    const posIdFinal = pos ? pos.id : (item.posId || item.endereco);
+
+    seqLocal++;
+    const boxId = 'EST-' + String(seqLocal).padStart(6, '0');
+    const novaCaixa = {
+      box: boxId,
+      nf: 'ESTOQUE ATUAL',
+      serie: '',
+      fornecedor: 'Cadastro de Endereçamento',
+      operator: 'Sistema',
+      address: posIdFinal,
+      status: 'ARMAZENADA',
+      entrada: now,
+      productCodes: [cleanCode], // ESTREITAMENTE 1 CÓDIGO
+      products: [{ code: cleanCode, name: prodName, family: fam }], // ESTREITAMENTE 1 PRODUTO
+      unidadesPorCaixa: qpc,
+      origem: 'PLANILHA_ENDERECAMENTO'
+    };
+
+    usedAddresses.add(canonicalAddressKey(posIdFinal));
+    usedAddresses.add(normAddr(posIdFinal));
+    newBoxesCreated.push(novaCaixa);
+  });
+
+  boxes = [...existingBoxesPreservadas, ...newBoxesCreated];
+  seq = seqLocal;
+  save();
+
+  if (typeof window.syncAddBoxesToSupabase === 'function' && newBoxesCreated.length > 0) {
+    window.syncAddBoxesToSupabase(newBoxesCreated);
+  }
+  if (typeof garantirPosicoesParaEnderecos === 'function') garantirPosicoesParaEnderecos();
+  atualizarSelectRuas();
+  dash();
+  map();
+  ultCaixa();
+  if (typeof ult === 'function') ult();
+  if (typeof buscarProduto === 'function') buscarProduto();
+
+  if (!silent) {
+    alert(`✓ ${newBoxesCreated.length.toLocaleString('pt-BR')} caixas foram geradas (1 caixa por linha) e estão visíveis no Mapa do Pulmão!`);
+  }
+}
+window.alocarCaixasDoCadastroDeEnderecos = alocarCaixasDoCadastroDeEnderecos;
+
+function cancelarPreviaImportacao() {
+  const containerPrevia = document.getElementById('containerPreviaImportacao');
+  const containerMap = document.getElementById('containerMapeamentoColunas');
+  const input = document.getElementById('planilhaPulmao');
+  const msg = document.getElementById('resultadoImportacaoPulmao');
+
+  if (containerPrevia) containerPrevia.style.display = 'none';
+  if (containerMap) containerMap.style.display = 'none';
+  if (input) input.value = '';
+  if (msg) msg.style.display = 'none';
+
+  _linhasPlanilhaPulmaoCarregadas = [];
+  _itensValidosParaImportar = [];
+}
+
+// Mantém compatibilidade caso chamado em outro ponto
+function importarPlanilhaPulmao() {
+  analisarPlanilhaPulmao();
 }
 function exportarInventarioPulmao(){
  const dados=[];
@@ -786,10 +1624,14 @@ setInterval(() => {
 }, 1000);
 
 function initApp() {
+  if (typeof restaurarPosicoesCustomizadas === 'function') restaurarPosicoesCustomizadas();
+  if (typeof garantirPosicoesParaEnderecos === 'function') garantirPosicoesParaEnderecos();
+  if (typeof atualizarSelectRuas === 'function') atualizarSelectRuas();
   if (typeof dash === 'function') dash();
   if (typeof ult === 'function') ult();
   if (typeof renderSobras === 'function') renderSobras();
   if (typeof map === 'function') map();
+  if (typeof atualizarHome === 'function') atualizarHome();
 }
 
 if (document.readyState === 'loading') {
@@ -815,6 +1657,16 @@ function atualizarHome(){
 
 
 document.addEventListener('DOMContentLoaded', () => {
+  const modalEl = document.getElementById('modal');
+  if (modalEl) {
+    modalEl.addEventListener('click', (e) => {
+      if (e.target === modalEl) closeM();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeM();
+  });
+
   if (typeof dash === 'function') dash();
   if (typeof ult === 'function') ult();
   if (typeof renderSobras === 'function') renderSobras();
@@ -835,18 +1687,39 @@ function getQtdPorCaixa(code){
  }
  return 1;
 }
-function limparTodosOsDados(){
- if(!confirm('Deseja realmente limpar todas as caixas e movimentações alocadas no pulmão?')) return;
- boxes = [];
- moves = [];
- seq = 0;
- localStorage.removeItem('p5_1_boxes');
- localStorage.removeItem('p5_1_moves');
- localStorage.removeItem('p5_1_seq');
- localStorage.removeItem('p5_1_sobras');
- save();
- if(typeof dash === 'function') dash();
- if(typeof map === 'function') map();
- if(typeof ult === 'function') ult();
- alert('Estoque e movimentações zerados com sucesso!');
+async function limparTodosOsDados() {
+  const confirmacao = confirm('⚠️ Deseja realmente ZERAR todas as caixas em estoque no Pulmão e as movimentações?');
+  if (!confirmacao) return;
+
+  // 1. Limpar caixas, movimentações e histórico local
+  boxes = [];
+  moves = [];
+  seq = 0;
+  localStorage.removeItem('p5_1_boxes');
+  localStorage.removeItem('p5_1_moves');
+  localStorage.removeItem('p5_1_seq');
+  localStorage.removeItem('p5_1_sobras');
+  save();
+
+  // 2. Limpar caixas e movimentações no Supabase
+  if (typeof window.syncClearAllFromSupabase === 'function') {
+    try {
+      await window.syncClearAllFromSupabase();
+    } catch(e) {
+      console.warn('Aviso ao sincronizar limpeza no Supabase:', e);
+    }
+  }
+
+  // 3. Atualizar todas as telas, contadores e tabelas
+  if (typeof dash === 'function') dash();
+  if (typeof map === 'function') map();
+  if (typeof ult === 'function') ult();
+  if (typeof ultCaixa === 'function') ultCaixa();
+  if (typeof atualizarHome === 'function') atualizarHome();
+  if (typeof renderSobras === 'function') renderSobras();
+  if (typeof mov === 'function') mov();
+  if (typeof buscarProduto === 'function') buscarProduto();
+
+  alert('✓ Estoque de caixas no Pulmão zerado com sucesso!');
 }
+window.limparTodosOsDados = limparTodosOsDados;

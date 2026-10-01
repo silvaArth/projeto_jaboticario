@@ -12,7 +12,92 @@
 <main>
 <section id="painel" class="active"><h2>Painel</h2><div class="cards">
 <div class="card">Capacidade<div class="big" id="capCard">2.646</div></div><div class="card">Ocupadas<div class="big" id="ocup">0</div></div><div class="card">Vagas<div class="big" id="livre">0</div></div><div class="card">Utilização<div class="big" id="perc">0%</div></div></div>
-<div class="card" style="margin-top:14px"><div class="sectionTitle"><div><h3 style="margin:0">Inventário do Pulmão</h3><div class="small">Exporte o inventário ou importe uma planilha Excel com os códigos e endereços físicos.</div></div><div><button onclick="exportarInventarioPulmao()">Exportar para Excel</button><button class="red" onclick="limparTodosOsDados()" style="margin-left:8px">Zerar Alocações</button></div></div><hr style="border:0;border-top:1px solid var(--line);margin:14px 0"><div class="toolbar"><input id="planilhaPulmao" type="file" accept=".xlsx,.xls,.csv" style="flex:1;min-width:260px"><button onclick="importarPlanilhaPulmao()">Importar planilha e atualizar pulmão</button></div><div class="small">A planilha deve ter colunas de <b>código</b> e <b>endereço</b>. Linhas sem código, vazias ou com código 00000 serão ignoradas. A importação substitui somente as alocações vindas da planilha, preservando as entradas manuais e por NF.</div><div id="resultadoImportacaoPulmao" class="notice" style="display:none;margin-top:10px"></div></div>
+<div class="card" style="margin-top:14px">
+  <div class="sectionTitle">
+    <div>
+      <h3 style="margin:0">📦 Cadastro de Endereçamento do Pulmão</h3>
+      <div class="small">Importe a planilha com os códigos de produto e seus endereços fixos no pulmão. As caixas físicas já armazenadas NÃO serão afetadas.</div>
+    </div>
+    <div>
+      <button onclick="exportarInventarioPulmao()">Exportar Inventário</button>
+      <button class="gray" onclick="alocarCaixasDoCadastroDeEnderecos()" style="margin-left:8px" title="Gera e posiciona as caixas no mapa do pulmão com base nos endereços já cadastrados">📍 Gerar Caixas no Mapa</button>
+      <button class="red" onclick="limparTodosOsDados()" style="margin-left:8px">Zerar Caixas em Estoque</button>
+    </div>
+  </div>
+  <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+  
+  <div class="toolbar" style="align-items:center;gap:12px;flex-wrap:wrap">
+    <input id="planilhaPulmao" type="file" accept=".xlsx,.xls,.csv" style="flex:1;min-width:260px" onchange="aoSelecionarPlanilhaPulmao(this)">
+    <button id="btnAnalisarPlanilha" class="gray" onclick="analisarPlanilhaPulmao()" style="display:none">🔍 Analisar Arquivo</button>
+  </div>
+
+  <div id="containerMapeamentoColunas" style="display:none;margin-top:14px;background:rgba(255,255,255,0.03);padding:14px;border-radius:8px;border:1px solid var(--line)">
+    <div style="font-weight:600;margin-bottom:8px">Mapeamento de Colunas da Planilha</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px">
+      <div>
+        <label class="small" style="display:block;margin-bottom:4px">Coluna do Código do Produto:</label>
+        <select id="selectColunaCodigo" style="width:100%" onchange="gerarPreviaImportacao()"></select>
+      </div>
+      <div>
+        <label class="small" style="display:block;margin-bottom:4px">Coluna do Endereço / Posição:</label>
+        <select id="selectColunaEndereco" style="width:100%" onchange="gerarPreviaImportacao()"></select>
+      </div>
+    </div>
+  </div>
+
+  <div id="containerPreviaImportacao" style="display:none;margin-top:14px">
+    <div class="stat-summary-grid">
+      <div class="stat-mini-card total">
+        <div class="small">Total de Linhas</div>
+        <div class="val" id="statTotalLinhas">0</div>
+      </div>
+      <div class="stat-mini-card valid">
+        <div class="small">Válidos para Gravar</div>
+        <div class="val" id="statValidos">0</div>
+      </div>
+      <div class="stat-mini-card warning">
+        <div class="small">Não no Catálogo</div>
+        <div class="val" id="statNaoCadastrados">0</div>
+      </div>
+      <div class="stat-mini-card error">
+        <div class="small">Linhas Inválidas</div>
+        <div class="val" id="statInvalidos">0</div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:600;font-size:13px">Amostra dos Dados (Primeiras 10 linhas):</span>
+        <span class="small" id="txtResumoValidacao"></span>
+      </div>
+      <div style="overflow-x:auto;max-height:260px">
+        <table id="tabelaPreviaImportacao">
+          <thead>
+            <tr><th>Linha</th><th>Código</th><th>Endereço Detectado</th><th>Produto no Catálogo</th><th>Status</th></tr>
+          </thead>
+          <tbody id="tbodyPreviaImportacao"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="containerProgressoImportacao" style="display:none;margin-top:14px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+        <span id="txtStatusProgresso">Gravando endereçamentos...</span>
+        <span id="txtPorcentagemProgresso" style="font-weight:bold">0%</span>
+      </div>
+      <div class="progresso-container">
+        <div id="barraProgressoFill" class="progresso-fill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:16px;align-items:center">
+      <button id="btnConfirmarImportacao" onclick="confirmarImportacaoEnderecamento()" style="background:#10b981;font-weight:bold;padding:10px 20px">✓ Confirmar e Salvar Endereçamentos</button>
+      <button id="btnCancelarImportacao" class="gray" onclick="cancelarPreviaImportacao()">Cancelar</button>
+    </div>
+  </div>
+
+  <div id="resultadoImportacaoPulmao" class="notice" style="display:none;margin-top:14px"></div>
+</div>
 </section>
 
 <section id="entrada"><h2>Recebimento por Nota Fiscal</h2><div id="bloqueio" class="alert"></div><div class="notice">A NF é convertida em caixas fechadas pela quantidade por caixa da planilha. Novas caixas são alocadas somente nas posições B, C, D e E cadastradas para o produto. A sobra de unidades fica no relatório de sobras.</div>
@@ -27,12 +112,16 @@
 
 <section id="caixa"><div class="card">
 <h2>Adicionar Caixa</h2>
-<p class="small">Informe o <b>código do produto</b> e a quantidade. Você pode deixar o endereço no automático (com agrupamento inteligente) ou escolher a posição desejada.</p>
+<p class="small">Informe o <b>código do produto</b> e a quantidade. O sistema sugere automaticamente o <b>endereço fixo cadastrado no pulmão</b> ou aloca de forma inteligente.</p>
 <div class="toolbar" style="flex-wrap:wrap;gap:10px">
-<input id="codigoProdutoCaixa" inputmode="numeric" placeholder="Código do produto (ex.: 01314)" style="flex:1;min-width:200px">
+<input id="codigoProdutoCaixa" inputmode="numeric" placeholder="Código do produto (ex.: 01314)" style="flex:1;min-width:200px" oninput="aoDigitarCodigoProdutoCaixa(this.value)">
 <input id="qtdCaixasCaixa" type="number" min="1" value="1" placeholder="Qtd. caixas" style="width:110px">
 <input id="enderecoCaixaInput" placeholder="Endereço / Cód. Barras (ex.: RUA5-6B ou em branco para Automático)" style="flex:1;min-width:260px" autocomplete="off">
 <input id="operadorCaixa" placeholder="Operador (ex.: Michael)" style="flex:1;min-width:180px">
+</div>
+<div id="enderecoCadastradoInfo" class="notice" style="display:none;margin-top:10px;background:#f0fdf4;border-color:#bbf7d0;color:#166534">
+  <span>📍 <b>Endereço no Pulmão:</b> <span id="txtEnderecoCadastrado" style="font-weight:bold">—</span></span>
+  <button type="button" class="gray" style="margin-left:12px;padding:3px 10px;font-size:12px" onclick="aplicarEnderecoCadastrado()">Usar este endereço</button>
 </div>
 <div class="toolbar" style="margin-top:10px">
 <button onclick="adicionarCaixasPorProduto()">Adicionar caixas</button>
@@ -43,7 +132,7 @@
 </section>
 <section id="pulmao"><h2>Mapa do Pulmão</h2>
 <div class="card occupacaoMapa"><div><div class="small">OCUPAÇÃO DO PULMÃO</div><div class="ocupGauge" id="percMapa">0%</div></div><div><b id="resumoMapa">0 de 2.646 caixas</b><div class="small" id="vagasMapa">2.646 vagas livres</div></div><div class="legendaMapa"><span class="legendaItem"><i class="legendaCor legendaLivre"></i> Livre</span><span class="legendaItem"><i class="legendaCor legendaOcupada"></i> Ocupado</span></div></div>
-<div class="card" style="border:2px solid #f59e0b"><h3>Retirar caixa do Pulmão</h3><p class="small">Digite o <b>código do produto</b> da caixa. O sistema localizará o endereço antes da retirada.</p><div class="toolbar"><input id="codigoRetiradaMapa" inputmode="numeric" placeholder="Código da caixa/produto (ex.: 90812)" style="flex:1;min-width:240px"><input id="operadorRetiradaMapa" placeholder="Operador" style="flex:1;min-width:180px"><button class="red" onclick="retirarPorCodigoNoMapa()">Localizar e retirar</button></div><div id="retiradaMapaInfo" class="notice" style="display:none"></div></div><div class="card"><b>Identificação por produto</b><div class="toolbar"><input id="produtoBusca" oninput="buscarProduto()" placeholder="Digite código ou nome do produto" style="flex:1"><button class="gray" onclick="limparProduto()">Limpar</button></div><div id="produtoResultado"></div></div><div class="toolbar"><select id="rua" onchange="map()"><option>TODAS</option><option>RUA 5</option><option>RUA 6</option><option>RUA 7</option></select><input id="busca" oninput="map()" placeholder="Buscar NF, caixa ou endereço"></div><div id="mapa"></div></section>
+<div class="card" style="border:2px solid #f59e0b"><h3>Retirar caixa do Pulmão</h3><p class="small">Digite o <b>código do produto</b> da caixa. O sistema localizará o endereço antes da retirada.</p><div class="toolbar"><input id="codigoRetiradaMapa" inputmode="numeric" placeholder="Código da caixa/produto (ex.: 90812)" style="flex:1;min-width:240px"><input id="operadorRetiradaMapa" placeholder="Operador" style="flex:1;min-width:180px"><button class="red" onclick="retirarPorCodigoNoMapa()">Localizar e retirar</button></div><div id="retiradaMapaInfo" class="notice" style="display:none"></div></div><div class="card"><b>Identificação por produto</b><div class="toolbar"><input id="produtoBusca" oninput="buscarProduto()" placeholder="Digite código ou nome do produto" style="flex:1"><button class="gray" onclick="limparProduto()">Limpar</button></div><div id="produtoResultado"></div></div><div class="toolbar"><select id="rua" onchange="map()"><option>TODAS</option><option>RUA 5</option><option>RUA 6</option><option>RUA 7</option></select><input id="busca" oninput="map()" placeholder="Buscar NF, caixa ou endereço"><button type="button" class="blue" onclick="alocarCaixasDoCadastroDeEnderecos(false)" style="background:#2563eb;color:#fff;font-weight:600;padding:6px 14px" title="Gera e sincroniza caixas no mapa a partir dos endereços cadastrados da planilha">📍 Sincronizar Caixas da Planilha</button></div><div id="mapa"></div></section>
 
 <section id="sobras"><h2>Relatório de Sobras da NF</h2><div class="card"><p class="small">Mostra somente a quantidade que não formou caixa fechada, calculada pela quantidade por caixa cadastrada na planilha.</p><div class="toolbar"><button onclick="exportarSobrasCSV()">Exportar sobras CSV</button><button class="gray" onclick="limparSobras()">Limpar relatório</button></div><div id="tabelaSobras"></div></div></section>
 <section id="mov"><h2>Movimentações</h2><div class="card"><div class="toolbar"><input id="ms" oninput="mov()" placeholder="Pesquisar"><button class="gray" onclick="csv()">Exportar CSV</button></div><div id="mt"></div></div></section>
